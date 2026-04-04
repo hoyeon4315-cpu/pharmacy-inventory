@@ -1,0 +1,6 @@
+# Cloudflare Pages - 브라우저 캐시 제어
+# index.html은 항상 서버에서 재검증 (배포 후 즉시 반영)
+/
+  Cache-Control: no-cache, must-revalidate
+/index.html
+  Cache-Control: no-cache, must-revalidate

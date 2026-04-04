@@ -1,0 +1,17 @@
+# 엑셀 데이터 파일 (환자/재고 실데이터)
+*.xlsx
+*.xls
+
+# Node
+node_modules/
+
+# Cloudflare
+.wrangler/
+
+# 로컬 임시 파일
+*.cmd
+serve.cmd
+
+# OS
+.DS_Store
+Thumbs.db

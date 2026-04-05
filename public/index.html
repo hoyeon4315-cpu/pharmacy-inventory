@@ -1565,6 +1565,7 @@ function loadDateView() {
   }
 
   // 사용량: 해당 날짜 dailyData에 저장된 것 복원 (없으면 빈 배열)
+  const dd = state.dailyData[date];
   state.dailyUsage = dd?.dailyUsage ? JSON.parse(JSON.stringify(dd.dailyUsage)) : [];
   // 입원MIX/외래: 해당 날짜만
   state.inpatientMix = dd?.inpatientMix ? JSON.parse(JSON.stringify(dd.inpatientMix)) : [];

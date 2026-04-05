@@ -492,32 +492,37 @@ export async function onRequestGet(context) {
     return Response.json({ debug: true, apiKey: apiKey.substring(0,8)+'...', results });
   }
 
+  const noCacheHeaders = {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  };
+
   try {
     const cached = await env.NEWS_CACHE.get(CACHE_KEY, { type: 'json' });
     if (cached) {
       const age = (Date.now() - new Date(cached.crawledAt).getTime()) / 1000;
       if (age < CACHE_TTL) {
-        // Cache-Control 헤더 추가로 브라우저 캐싱 방지
-        return Response.json({ ...cached, fromCache: true }, {
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-            'Expires': '0'
-          }
-        });
+        return Response.json({ ...cached, fromCache: true }, { headers: noCacheHeaders });
       }
+      // Stale-while-revalidate: 만료된 캐시 즉시 반환, 백그라운드 갱신
+      const apiKey = env.DATA_GO_KR_API_KEY || '';
+      if (apiKey) {
+        context.waitUntil((async () => {
+          try {
+            const news = await crawlNews(apiKey, env.NEWS_CACHE);
+            await env.NEWS_CACHE.put(CACHE_KEY, JSON.stringify(news), { expirationTtl: CACHE_TTL * 2 });
+          } catch (e) { console.error('백그라운드 뉴스 갱신 실패:', e.message); }
+        })());
+      }
+      return Response.json({ ...cached, fromCache: true, stale: true }, { headers: noCacheHeaders });
     }
+    // 캐시 없음: 최초 요청만 동기 크롤
     const apiKey = env.DATA_GO_KR_API_KEY || '';
     if (!apiKey) return Response.json({ items: [], error: 'API 키 미설정', fromCache: false });
     const news = await crawlNews(apiKey, env.NEWS_CACHE);
-    await env.NEWS_CACHE.put(CACHE_KEY, JSON.stringify(news), { expirationTtl: CACHE_TTL });
-    return Response.json({ ...news, fromCache: false }, {
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      }
-    });
+    await env.NEWS_CACHE.put(CACHE_KEY, JSON.stringify(news), { expirationTtl: CACHE_TTL * 2 });
+    return Response.json({ ...news, fromCache: false }, { headers: noCacheHeaders });
   } catch (e) {
     const cached = await env.NEWS_CACHE.get(CACHE_KEY, { type: 'json' });
     if (cached) return Response.json({ ...cached, fromCache: true, error: e.message });

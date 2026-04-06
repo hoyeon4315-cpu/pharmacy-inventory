@@ -8,6 +8,9 @@ node_modules/
 # Cloudflare
 .wrangler/
 
+# 환경변수 (토큰)
+.env
+
 # 로컬 임시 파일
 *.cmd
 serve.cmd

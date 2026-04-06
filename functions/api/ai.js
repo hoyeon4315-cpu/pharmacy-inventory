@@ -74,7 +74,8 @@ async function handleChat(env, body) {
   const {
     message, dataType, activeTab,
     inventorySummary, drugMasterSummary, recentAlerts,
-    conversationHistory, newsContext, filteredDrugList
+    conversationHistory, newsContext, filteredDrugList, historicalDays,
+    dataAvailability, forecastUsageSummary
   } = body;
 
   if (!message || !dataType) {
@@ -108,7 +109,8 @@ async function handleChat(env, body) {
   const systemPrompt = buildMultiAgentPrompt(
     dataType, activeTab, memories, history,
     inventorySummary, drugMasterSummary, recentAlerts,
-    chemoStats, newsContext, filteredDrugList
+    chemoStats, newsContext, filteredDrugList, historicalDays,
+    dataAvailability, forecastUsageSummary
   );
 
   // 5. AI 호출 (멀티턴 이력 포함)
@@ -141,185 +143,164 @@ async function handleChat(env, body) {
 
 // ── Multi-Agent 시스템 프롬프트 ──
 
-function buildMultiAgentPrompt(dataType, activeTab, memories, history, inventorySummary, drugMasterSummary, recentAlerts, chemoStats, newsContext, filteredDrugList) {
+function buildMultiAgentPrompt(dataType, activeTab, memories, history, inventorySummary, drugMasterSummary, recentAlerts, chemoStats, newsContext, filteredDrugList, historicalDays, dataAvailability, forecastUsageSummary) {
   const modeName = dataType === 'chemo' ? '항암제' : '일반약';
   const modeNameEn = dataType === 'chemo' ? 'chemo' : 'general';
 
+  // 데이터 가용성 파악
+  const da = dataAvailability || {};
+  const hasInventory = (da.inventoryDays || 0) > 0;
+  const hasUsageFile = (da.usageFileDays || 0) > 0;
+  const hasForecast = da.hasForecastUsage || false;
+  const usageSource = da.usageSource || '데이터 없음';
+
   let prompt = `# SYSTEM IDENTITY
-당신은 병원 약제부 재고관리 Multi-Agent AI 시스템입니다.
-현재 모드: **${modeName} 관리 모드** (current_mode = "${modeNameEn}")
+당신은 병원 약제부 재고관리 전문 AI입니다.
+현재 모드: **${modeName} 관리 모드**
 
-## CRITICAL MODE RULE (절대 위반 금지)
-- current_mode = "${modeNameEn}" → 오직 **${modeName}** 분류 의약품만 언급하라.
-- ${dataType === 'chemo' ? '일반약(진통제, 항생제, 수액 등)은 절대 언급하지 마라.' : '항암제(Paclitaxel, Cisplatin, Bevacizumab 등 항암 목적 약물)는 절대 언급하지 마라.'}
-- 사용자가 다른 분류 약품을 물어보면: "현재 ${modeName} 관리 모드입니다. 해당 약품은 ${dataType === 'chemo' ? '일반약' : '항암제'} 모드에서 확인해주세요."라고 안내하라.
-- 모드에 맞지 않는 재고 데이터, 뉴스, 통계는 분석하지도, 참조하지도 마라.
+## CORE MISSION
+1. 재고 위험 조기 경보: 소진 임박 약품 파악 + 구체적 발주 시점 제안
+2. 공급 리스크 분석: 뉴스 + 재고 데이터 결합하여 공급 중단 위험 사전 경고
+3. 수요 예측: 과거 사용 패턴 기반 향후 소요량 예측
+4. 실행 가능한 조언: "확인하세요" (X) → "X개 발주하세요" (O)
 
-# MULTI-AGENT ARCHITECTURE
-내부적으로 3개 에이전트가 협업하여 응답을 생성합니다:
+## CRITICAL MODE RULE
+- 오직 **${modeName}** 분류 의약품만 분석
+- ${dataType === 'chemo' ? '일반약은 절대 언급 금지' : '항암제는 절대 언급 금지'}
 
-## Agent 1: 뉴스 분석가 (News Analyst)
-- 역할: 의약품 공급 뉴스 중 **현재 모드(${modeName})의 원내 등록 의약품**과 직접 관련된 뉴스만 분석
-- 규칙:
-  * 원자재/원료 공급망 뉴스 → 완전 무시
-  * 해외 뉴스(국내 공급과 무관) → 무시
-  * 다른 분류(${dataType === 'chemo' ? '일반약' : '항암제'}) 관련 뉴스 → 무시
-  * 원내 등록 약품 목록에 없는 약품 뉴스 → 무시
-  * 반드시 "어떤 원내 약품에 영향이 있는가"를 결론으로 제시
+## 재고 증감 해석 원칙 (중요)
+재고 변화 = 사용량 - 입고량
+- 재고가 줄었다 → 사용했거나 폐기
+- 재고가 늘었다 → 입고가 있었다는 의미 (사용량 계산 시 단순 감소량만 보면 오류)
+- 따라서 일평균 소모량은 **사용량 파일** 기반이 가장 정확
+- 사용량 파일 없으면 재고 감소량으로 추정하되 "입고 가능성" 언급 필요
 
-## Agent 2: 내부 데이터 분석가 (Data Analyst)
-- 역할: 현재 모드(${modeName})에 해당하는 재고/사용량 JSON 데이터만 분석
-- 규칙:
-  * 다른 분류 데이터는 절대 보지 않음
-  * 재고 수량, 감소 추이, 부족 예측, 사용량 패턴만 분석
-  * 수치는 반드시 구체적으로 명시 (약품명 + 현재고 + 일평균소모량 + 예상소진일)
-  * 위험 약품(재고 3일분 이하) → 최우선 언급
+## 현재 데이터 가용성
+- 재고 이력: ${da.inventoryDays || 0}일치 (최신: ${da.latestInventoryDate || '없음'})
+- 사용량 파일: ${da.usageFileDays || 0}일치
+- 기간별 소모량: ${hasForecast ? da.forecastPeriod : '없음'}
+- 일평균 소모량 계산 기준: **${usageSource}**
 
-## Agent 3: 최종 추천 합성자 (Synthesizer)
-- 역할: Agent 1(뉴스)과 Agent 2(데이터)의 결과를 통합하여 최종 응답 생성
-- 규칙:
-  * 뉴스 리스크 + 재고 리스크가 겹치는 약품 → 최우선 경고
-  * 실행 가능한 조치(발주, 대체약, 진료과 알림 등)를 구체적으로 제안
-  * 불확실한 정보는 "확인 필요"로 표시, 추측 금지
-  * 응답은 한국어, 간결하게 (불필요한 서론 없이 바로 본론)
+## 데이터 부족 시 안내 규칙 (필수)
+사용자가 분석을 요청할 때 데이터가 부족하면 반드시 어떤 파일이 필요한지 안내:
+- 소진일/발주량 계산 불가 → "사용량 파일(2번)을 업로드하면 더 정확한 분석이 가능합니다"
+- 추세 분석 불가 (재고 이력 1일 이하) → "매일 현재고량 파일(1번)을 업로드하면 추세 분석이 가능합니다"
+- 기간 소모량 없음 → "수요예측 탭에서 기간별 사용량 파일을 업로드하면 더 정확한 예측이 가능합니다"
+- 뉴스 분석 요청 시 원내 약품 미등록 → "설정 탭에서 약품 마스터를 등록하면 원내 약품 관련 뉴스만 필터링됩니다"
 
-# FEW-SHOT EXAMPLES (Hallucination 방지)
+## 응답 형식
+- 🔴 긴급 (1-3일분) / 🟡 주의 (4-7일분) / 🟢 안정 (8일분+)
+- 발주량 = (일평균 × 14일) - 현재고
+- 수치 없이 "부족합니다" 같은 모호한 답변 금지
+- 현재 탭: ${activeTab || '대시보드'}
+
+## 메모리 저장
+사용자가 정보 제공 시 응답 끝에: [MEMORY:카테고리:내용]
+카테고리: drug_status / shortage / discontinued / note
 `;
 
-  if (dataType === 'chemo') {
-    prompt += `
-<example_1>
-사용자: 이번 주 재고 상황 어때?
-올바른 응답: "현재 항암제 재고 현황입니다.
-- Paclitaxel 150mg(TAXOL15): 현재고 12vial, 일평균 3vial 소모 → 약 4일분
-- Cisplatin 50mg(CISPL5): 현재고 5vial, 일평균 2vial → 약 2.5일분 [긴급발주 필요]
-- Bevacizumab 400mg: 현재고 20vial, 안정적
-
-Cisplatin은 이번 주 내 소진 가능성이 높습니다. 즉시 발주를 권장합니다."
-잘못된 응답: "타이레놀이 부족합니다" (← 일반약이므로 항암제 모드에서 절대 언급 금지)
-</example_1>
-
-<example_2>
-사용자: 품절 뉴스 있어?
-올바른 응답: "현재 항암제 관련 공급 이슈입니다.
-- Docetaxel 80mg: 제조사 생산라인 점검으로 4월 중순까지 공급 지연 예상 → 원내 재고 확인 필요
-- 나머지 항암제는 공급 정상입니다.
-
-(일반 소염진통제/항생제 관련 뉴스는 일반약 모드에서 확인해주세요.)"
-잘못된 응답: "아목시실린 품절" (← 일반약이므로 항암제 모드에서 언급 금지)
-</example_2>
-`;
-  } else {
-    prompt += `
-<example_1>
-사용자: 부족한 약 뭐 있어?
-올바른 응답: "현재 일반약 재고 부족 현황입니다.
-- Amoxicillin 500mg: 현재고 30정, 일평균 15정 소모 → 2일분 [긴급발주 필요]
-- Normal Saline 1L: 현재고 10bag, 일평균 8bag → 1.3일분 [긴급]
-- Acetaminophen 500mg: 현재고 200정, 안정적
-
-Amoxicillin과 생리식염수는 즉시 발주가 필요합니다."
-잘못된 응답: "Paclitaxel이 부족합니다" (← 항암제이므로 일반약 모드에서 절대 언급 금지)
-</example_1>
-`;
-  }
-
-  // 응답 규칙
-  prompt += `
-# RESPONSE RULES
-- 한국어 답변. 간결하고 실용적.
-- 수치는 반드시 구체적으로 제시.
-- 위험/부족 약품 → 최우선 언급.
-- 현재 탭: ${activeTab || '대시보드'} (탭에 맞는 정보 우선)
-- 사용자가 정보를 알려주면("기억해줘", "~된대", "~품절", "~안 쓴다" 등) 응답 맨 끝에:
-  [MEMORY:카테고리:내용]
-  카테고리: drug_status / shortage / discontinued / note
-  예시: [MEMORY:shortage:Paclitaxel 150mg: 4월부터 공급중단 예정]
-- 기억 요청이 아닌 일반 질문에는 [MEMORY] 태그를 붙이지 마세요.
-`;
-
-  // 원내 등록 약품 목록 (프론트에서 전달)
+  // 원내 등록 약품 목록
   if (filteredDrugList && filteredDrugList.length > 0) {
     prompt += '\n# 원내 등록 ' + modeName + ' 목록 (' + filteredDrugList.length + '품목)\n';
-    prompt += '이 목록에 있는 약품만 "원내 약품"으로 인식하세요.\n';
-    filteredDrugList.slice(0, 100).forEach(d => {
-      prompt += `- ${d.code}: ${d.name}\n`;
-    });
-    if (filteredDrugList.length > 100) {
-      prompt += `... 외 ${filteredDrugList.length - 100}품목\n`;
-    }
+    filteredDrugList.slice(0, 100).forEach(d => { prompt += `- ${d.code}: ${d.name}\n`; });
+    if (filteredDrugList.length > 100) prompt += `... 외 ${filteredDrugList.length - 100}품목\n`;
+  } else {
+    prompt += '\n# 원내 약품 마스터 미등록\n설정 탭에서 약품을 등록하면 더 정확한 분석이 가능합니다.\n';
   }
 
-  // 기억된 정보 (현재 모드 전용)
+  // 기억된 정보
   if (memories.length > 0) {
-    prompt += '\n# 기억된 정보 (' + modeName + ' 전용)\n';
+    prompt += '\n# 기억된 정보\n';
     memories.forEach(m => {
       const date = m.created_at ? m.created_at.slice(0, 10) : '';
       prompt += `- [${date}] ${m.category}: ${m.drug_name ? m.drug_name + ' - ' : ''}${m.content}\n`;
     });
   }
 
-  // 현재 재고
+  // 현재 재고 (긴급도 정렬)
   if (inventorySummary && inventorySummary.length > 0) {
-    prompt += '\n# 현재 ' + modeName + ' 재고 (' + inventorySummary.length + '품목)\n';
-    prompt += '코드 | 약품명 | 현재고\n';
-    inventorySummary.slice(0, 80).forEach(d => {
-      prompt += `${d.code} | ${d.name} | ${d.qty}\n`;
+    const sorted = inventorySummary.slice().sort((a, b) => a.daysLeft - b.daysLeft);
+    prompt += `\n# 현재 ${modeName} 재고 (${inventorySummary.length}품목, 소모량 기준: ${usageSource})\n`;
+    prompt += '긴급 | 코드 | 약품명 | 현재고 | 일평균소모 | 예상소진\n';
+    sorted.slice(0, 80).forEach(d => {
+      const u = d.daysLeft <= 3 ? '🔴' : d.daysLeft <= 7 ? '🟡' : '🟢';
+      const days = d.daysLeft >= 999 ? '계산불가' : d.daysLeft + '일분';
+      prompt += `${u} | ${d.code} | ${d.name} | ${d.qty} | ${d.dailyUsage || '-'}/일 | ${days}\n`;
     });
-    if (inventorySummary.length > 80) {
-      prompt += `... 외 ${inventorySummary.length - 80}품목\n`;
+    if (sorted.length > 80) prompt += `... 외 ${sorted.length - 80}품목\n`;
+
+    const urgent = sorted.filter(d => d.daysLeft <= 3 && d.qty > 0 && d.dailyUsage > 0);
+    if (urgent.length > 0) {
+      prompt += `\n⚠️ 즉시 발주 필요 ${urgent.length}품목:\n`;
+      urgent.slice(0, 10).forEach(d => {
+        const orderQty = Math.max(0, Math.ceil(d.dailyUsage * 14) - d.qty);
+        prompt += `  - ${d.name}: 현재 ${d.qty}, 발주 ${orderQty} 권장 (2주분)\n`;
+      });
     }
+
+    const noUsageData = sorted.filter(d => d.dailyUsage === 0).length;
+    if (noUsageData > 0) {
+      prompt += `\n※ ${noUsageData}품목은 사용량 데이터 없어 소진일 계산 불가 → 사용량 파일(2번) 업로드 권장\n`;
+    }
+  } else if (!hasInventory) {
+    prompt += '\n# 재고 데이터 없음\n현재고량 파일(1번)을 업로드하면 재고 분석이 가능합니다.\n';
+  }
+
+  // 기간별 소모량 (forecastUsage)
+  if (forecastUsageSummary && forecastUsageSummary.itemCount > 0) {
+    prompt += `\n# 기간별 소모량 데이터 (${forecastUsageSummary.period}, ${forecastUsageSummary.itemCount}품목)\n`;
+    prompt += '이 데이터가 가장 신뢰도 높은 소모량 기준입니다.\n';
+    prompt += '코드 | 약품명 | 기간합계 | 일평균\n';
+    forecastUsageSummary.topItems.forEach(i => {
+      prompt += `${i.code} | ${i.name} | ${i.total} | ${i.dailyAvg}/일\n`;
+    });
   }
 
   // 현재 알림
   if (recentAlerts && recentAlerts.length > 0) {
-    prompt += '\n# 현재 알림\n';
+    prompt += '\n# 현재 시스템 알림\n';
     recentAlerts.forEach(a => { prompt += `- ${a}\n`; });
   }
 
-  // 재고 추이
+  // 재고 추이 (D1 히스토리)
   if (history.length >= 2) {
-    prompt += '\n# ' + modeName + ' 재고 추이 (최근 ' + history.length + '일)\n';
+    prompt += `\n# ${modeName} 재고 추이 (최근 ${history.length}일, D1 저장)\n`;
     prompt += analyzeHistoryTrends(history);
   }
 
-  // 등록 약품 수 요약
-  if (drugMasterSummary) {
-    prompt += '\n# 등록 약품 현황: ' + drugMasterSummary + '\n';
-  }
-
-  // 뉴스 컨텍스트 (프론트에서 필터링된 원내약품 관련만)
+  // 뉴스 + 재고 교차 분석
   if (newsContext && newsContext.length > 0) {
-    prompt += '\n# 원내 ' + modeName + ' 관련 공급 뉴스 (Agent 1 분석 대상)\n';
-    prompt += '아래는 원내 등록 약품과 매칭된 뉴스만 포함합니다.\n';
+    prompt += `\n# 원내 ${modeName} 관련 공급 뉴스 (${newsContext.length}건)\n`;
     newsContext.slice(0, 15).forEach(n => {
-      prompt += `- [${n.date || ''}] ${n.title}${n.matchedDrug ? ' → 원내약품: ' + n.matchedDrug : ''}\n`;
+      prompt += `- [${n.date || ''}][${n.category || ''}] ${n.title}`;
+      if (n.matchedDrug) {
+        const inv = inventorySummary?.find(i => i.name.includes(n.matchedDrug) || n.matchedDrug.includes(i.name));
+        if (inv) {
+          const risk = inv.daysLeft <= 7 ? '🔴높음' : '🟡중간';
+          prompt += ` → 원내: ${n.matchedDrug} (재고 ${inv.daysLeft}일분, 위험도 ${risk})`;
+        } else {
+          prompt += ` → 원내: ${n.matchedDrug}`;
+        }
+      }
+      prompt += '\n';
     });
   }
 
-  // 항암제 일별 통계
+  // 항암제 통계
   if (chemoStats && chemoStats.length > 0) {
-    prompt += '\n# 항암제 처방/환자 통계 (최근 ' + chemoStats.length + '일)\n';
-    prompt += '날짜 | 입원환자 | 외래환자 | 총환자 | 입원처방 | 외래처방 | 카테고리 | 처방의\n';
-    chemoStats.slice(0, 60).forEach(row => {
-      try {
-        const s = typeof row.stats === 'string' ? JSON.parse(row.stats) : row.stats;
-        const catStr = s.cats ? Object.entries(s.cats).map(([k,v]) => k + ':' + v).join(',') : '';
-        const docStr = s.docs ? Object.entries(s.docs).map(([k,v]) => k + '(' + v.pts + '명,' + v.rx + '건)').join(',') : '';
-        prompt += s.d + ' | ' + (s.inPts||0) + ' | ' + (s.outPts||0) + ' | ' + (s.totalPts||0) + ' | ' + (s.inRx||0) + ' | ' + (s.outRx||0) + ' | ' + catStr + ' | ' + docStr + '\n';
-      } catch (e) { /* skip */ }
-    });
+    prompt += `\n# 항암제 처방/환자 통계 (최근 ${chemoStats.length}일)\n`;
     try {
       const latest = typeof chemoStats[0].stats === 'string' ? JSON.parse(chemoStats[0].stats) : chemoStats[0].stats;
       if (latest.drugs && latest.drugs.length > 0) {
-        prompt += '\n최근(' + latest.d + ') 약품별 사용량 (상위 20):\n';
-        prompt += '코드 | 약품명 | 입원사용 | 외래사용 | 환자수\n';
-        latest.drugs.slice(0, 20).forEach(d => {
-          prompt += d.c + ' | ' + d.n + ' | ' + d.iQ + ' | ' + d.oQ + ' | ' + d.p + '명\n';
+        prompt += `최근(${latest.d}) 약품별 사용량 TOP 10:\n`;
+        latest.drugs.slice(0, 10).forEach(d => {
+          prompt += `- ${d.n}: 입원 ${d.iQ}, 외래 ${d.oQ}, 환자 ${d.p}명\n`;
         });
       }
     } catch (e) { /* skip */ }
   }
+
+  if (drugMasterSummary) prompt += `\n# 등록 약품 현황: ${drugMasterSummary}\n`;
 
   return prompt;
 }
@@ -385,7 +366,7 @@ function analyzeHistoryTrends(history) {
   return result;
 }
 
-// ── AI 모델 호출 (Grok 4.1 Fast Primary) ──
+// ── AI 모델 호출 ──
 
 async function callAI(env, systemPrompt, userMessage, history = []) {
   const normalizedHistory = history.map(m => ({
@@ -398,60 +379,64 @@ async function callAI(env, systemPrompt, userMessage, history = []) {
     { role: 'user', content: userMessage }
   ];
 
-  // 1차: xAI Grok 4.1 Fast Reasoning (Primary)
+  // 1차: xAI Grok 4.1 Fast (Primary) - 비추론/추론 순서로 시도
   if (env.XAI_API_KEY) {
-    try {
-      const res = await fetch('https://api.x.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + env.XAI_API_KEY,
-        },
-        body: JSON.stringify({
-          model: 'grok-4-1-fast-reasoning',
-          messages,
-          max_tokens: 2048,
-          temperature: 0.2,
-        }),
-      });
+    for (const model of ['grok-4-1-fast', 'grok-4-1-fast-reasoning', 'grok-3-fast']) {
+      try {
+        const res = await fetch('https://api.x.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + env.XAI_API_KEY,
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            max_tokens: 2048,
+            temperature: 0.3,
+          }),
+        });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.choices && data.choices[0]) {
-          return data.choices[0].message.content;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.choices?.[0]?.message?.content) {
+            console.log('AI model used:', model);
+            return data.choices[0].message.content;
+          }
+        } else {
+          const errText = await res.text().catch(() => '');
+          console.warn(model + ' failed:', res.status, errText.substring(0, 200));
+          // 모델 없음 오류면 다음 모델 시도, 인증 오류면 중단
+          if (res.status === 401 || res.status === 403) break;
         }
-      } else {
-        console.warn('Grok 4.1 Fast failed:', res.status, await res.text().catch(() => ''));
+      } catch (e) {
+        console.warn(model + ' error:', e.message);
       }
-    } catch (e) {
-      console.warn('Grok 4.1 Fast error:', e.message);
     }
   }
 
   // 2차: Workers AI 폴백 (무료)
   if (env.AI) {
-    // 70B
     try {
       const result = await env.AI.run('@cf/meta/llama-3.3-70b-instruct-fp8-fast', {
         messages,
         max_tokens: 1024,
       });
-      if (result && result.response) return result.response;
+      if (result?.response) return result.response;
     } catch (e) {
       console.warn('70B failed:', e.message);
     }
 
-    // 8B 폴백
     try {
       const result = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
         messages,
         max_tokens: 1024,
       });
-      if (result && result.response) return result.response;
+      if (result?.response) return result.response;
     } catch (e) {
       console.warn('8B failed:', e.message);
     }
   }
 
-  throw new Error('AI 서비스를 사용할 수 없습니다. XAI_API_KEY를 설정하거나 Workers AI를 확인하세요.');
+  throw new Error('AI 서비스를 사용할 수 없습니다.');
 }

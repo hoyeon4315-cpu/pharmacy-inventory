@@ -1435,7 +1435,17 @@ function parseInventory(wb) {
       price: parseFloat(String(r['단가'] || '0').replace(/,/g,'')) || 0,
       total: parseFloat(String(r['총금액'] || '0').replace(/,/g,'')) || 0
     };
-  }).filter(function(r) { return r.code || r.name; });
+  }).filter(function(r) {
+    // 물품코드가 없으면 제외
+    if (!r.code || !r.name) return false;
+    
+    // 물품코드가 숫자로만 구성된 경우만 허용 (예: 123456)
+    // 또는 대표물품코드가 있는 경우 (대표물품코드 우선 사용)
+    var isNumericCode = /^\d+$/.test(r.code);
+    
+    // 물품코드가 숫자가 아니면 제외 (예: CAMTOBEL 같은 문자 코드 제외)
+    return isNumericCode;
+  });
   console.log('[1.xlsx] 파싱완료:', state.inventory.length, '품목, qty>0:', state.inventory.filter(function(r){return r.qty>0;}).length);
   if (state.inventoryFileType === '특수조제') {
     toast('특수조제 파일 감지 - 항암제 목록만 표시됩니다', 'info');
@@ -2946,6 +2956,28 @@ function uploadFormulary(input) {
 }
 
 // ── 뉴스 원내 약품 매칭 ───────────────────────────────────────
+// 한글-영문 약품명 매핑 사전 (일반적인 약품명)
+const DRUG_NAME_MAP = {
+  // 항암제
+  '시스플라틴': 'cisplatin', '카보플라틴': 'carboplatin', '옥살리플라틴': 'oxaliplatin',
+  '파클리탁셀': 'paclitaxel', '도세탁셀': 'docetaxel', '젬시타빈': 'gemcitabine', '젬자': 'gemzar',
+  '허셉틴': 'herceptin', '트라스투주맙': 'trastuzumab', '베바시주맙': 'bevacizumab', '아바스틴': 'avastin',
+  '세툭시맙': 'cetuximab', '리툭시맙': 'rituximab', '이리노테칸': 'irinotecan', '토포테칸': 'topotecan',
+  '에토포시드': 'etoposide', '빈크리스틴': 'vincristine', '빈블라스틴': 'vinblastine',
+  '독소루비신': 'doxorubicin', '에피루비신': 'epirubicin', '플루오로우라실': 'fluorouracil',
+  '카페시타빈': 'capecitabine', '메토트렉세이트': 'methotrexate', '사이클로포스파마이드': 'cyclophosphamide',
+  '이포스파마이드': 'ifosfamide', '템시롤리무스': 'temsirolimus', '에베롤리무스': 'everolimus',
+  '수니티닙': 'sunitinib', '소라페닙': 'sorafenib', '레날리도마이드': 'lenalidomide',
+  '보르테조밉': 'bortezomib', '펨브롤리주맙': 'pembrolizumab', '니볼루맙': 'nivolumab', '아테졸리주맙': 'atezolizumab',
+  // 일반약
+  '타이레놀': 'tylenol', '아세트아미노펜': 'acetaminophen', '이부프로펜': 'ibuprofen', '아스피린': 'aspirin',
+  '아목시실린': 'amoxicillin', '세파클러': 'cefaclor', '세프트리악손': 'ceftriaxone',
+  '레보플록사신': 'levofloxacin', '시프로플록사신': 'ciprofloxacin', '오메프라졸': 'omeprazole',
+  '란소프라졸': 'lansoprazole', '라니티딘': 'ranitidine', '메트포르민': 'metformin',
+  '글리메피리드': 'glimepiride', '아토르바스타틴': 'atorvastatin', '로수바스타틴': 'rosuvastatin',
+  '암로디핀': 'amlodipine', '로사르탄': 'losartan', '발사르탄': 'valsartan',
+};
+
 function normalizeDrugName(name) {
   if (!name) return '';
   return name
@@ -2962,11 +2994,12 @@ function extractEngBase(name) {
   var m = name.match(/^([A-Za-z][A-Za-z\-]+)/);
   return m ? m[1].toLowerCase() : '';
 }
-// 한글 기본명 추출: "시스플라틴주사50밀리그램" → "시스플라틴"
+// 한글 기본명 추출: "시스플라틴주사50밀리그램" → "시스플라틴", "허셉틴주" → "허셉틴", "도세탁셀주사액" → "도세탁셀"
 function extractKorBase(name) {
   if (!name) return '';
   var m = name.replace(/\([^)]*\)/g, '').match(/^([가-힣]{2,})/);
-  return m ? m[1].replace(/주사$|정$|캡슐$|시럽$|크림$|연고$|과립$|현탁$|액$|산$/, '') : '';
+  // 접미사 제거: 주사액, 주사, 주, 정, 캡슐, 시럽, 크림, 연고, 과립, 현탁, 액, 산
+  return m ? m[1].replace(/주사액$|주사$|주$|정$|캡슐$|시럽$|크림$|연고$|과립$|현탁$|액$|산$/, '') : '';
 }
 
 // 뉴스 매칭 캐시 (renderNewsPage마다 초기화)
@@ -2981,17 +3014,22 @@ function buildNewsMatchCache() {
     .filter(d => d && d.name)
     .map(d => ({ ...d, _type: d._type || '원내' }));
   // 마스터에 없는 재고 항목만 추가 (중복 방지)
-  const masterNames = new Set(fromMaster.map(d => (d.name||'').toLowerCase()));
-  const inventoryOnly = fromInventory.filter(d => !masterNames.has((d.name||'').toLowerCase()));
+  const masterCodes = new Set(fromMaster.map(d => d.code));
+  const inventoryOnly = fromInventory.filter(d => !masterCodes.has(d.code));
   const allDrugs = [...fromMaster, ...inventoryOnly].filter(d => d && d.name);
+  
   return allDrugs.map(d => ({
     drug: d,
     norm: normalizeDrugName(d.name),
     eng: extractEngBase(d.name),
     kor: extractKorBase(d.name),
+    // 약품명 전체 (한글+영문 모두 포함)
+    fullName: d.name.toLowerCase(),
     ingredient: (d.ingredient || '').toLowerCase(),
     ingKor: (d.ingredient || '').replace(/[a-zA-Z0-9\s.,()\/\-]/g, '').trim(),
     ingEng: (d.ingredient || '').split(/\s+/)[0].toLowerCase(),
+    // EDI 코드 추가 (9자리 숫자)
+    ediCode: d.ediCode || d.code || '',
   }));
 }
 
@@ -3009,54 +3047,111 @@ function getMatchedHospitalDrug(newsItem) {
   const newsKor = extractKorBase(newsProductName);
   const newsLower = (newsItem.title + ' ' + (newsItem.summary || '')).toLowerCase();
 
-  // summary에서 EDI코드 추출
-  const ediMatch = (newsItem.summary || '').match(/EDI코드:\s*(\d{9,})/);
+  // summary에서 EDI코드 추출 (9자리 이상 숫자)
+  const ediMatch = (newsItem.summary || '').match(/EDI코드:\s*(\d{9,})/i);
   const newsEdi = ediMatch ? ediMatch[1] : '';
 
-  // 1단계: EDI코드 매칭
-  if (newsEdi) {
+  // 1단계: EDI코드 매칭 (가장 정확) - 9자리 이상 숫자만
+  if (newsEdi && newsEdi.length >= 9) {
     for (const c of cache) {
-      if (c.drug.ediCode && newsEdi === c.drug.ediCode) return c.drug;
+      const drugEdi = String(c.ediCode || '').trim();
+      // EDI 코드는 정확히 일치해야 함
+      if (drugEdi.length >= 9 && drugEdi === newsEdi) {
+        console.log('[뉴스매칭] EDI 일치:', newsProductName, '→', c.drug.name, '(EDI:', newsEdi, ')');
+        return c.drug;
+      }
     }
   }
 
-  // 2단계: 약품명 정규화 매칭 (최소 4자, 길이 비율 50% 이상)
-  if (newsNorm.length >= 4) {
+  // 2단계: 약품명 정규화 매칭 (최소 5자로 강화, 길이 비율 70% 이상)
+  if (newsNorm.length >= 5) {
     for (const c of cache) {
-      if (!c.norm || c.norm.length < 4) continue;
+      if (!c.norm || c.norm.length < 5) continue;
       const short = newsNorm.length <= c.norm.length ? newsNorm : c.norm;
       const long = newsNorm.length > c.norm.length ? newsNorm : c.norm;
-      if (long.includes(short) && short.length / long.length >= 0.5) return c.drug;
+      // 더 엄격한 매칭: 70% 이상 일치 + 최소 5자 이상
+      if (long.includes(short) && short.length >= 5 && short.length / long.length >= 0.7) {
+        console.log('[뉴스매칭] 정규화 일치:', newsProductName, '→', c.drug.name, '(norm:', short, '/', long, ')');
+        return c.drug;
+      }
     }
   }
 
-  // 3단계: 영문 기본명 매칭 (최소 5자, prefix 매칭)
-  if (newsEng.length >= 5) {
+  // 3단계: 영문 기본명 매칭 (최소 6자로 강화, prefix 매칭, 70% 이상)
+  if (newsEng.length >= 6) {
     for (const c of cache) {
-      if (c.eng.length >= 5) {
+      if (c.eng.length >= 6) {
         const short = newsEng.length <= c.eng.length ? newsEng : c.eng;
         const long = newsEng.length > c.eng.length ? newsEng : c.eng;
-        if (long.startsWith(short) && short.length / long.length >= 0.6) return c.drug;
+        // 더 엄격한 매칭: 70% 이상 일치
+        if (long.startsWith(short) && short.length >= 6 && short.length / long.length >= 0.7) {
+          console.log('[뉴스매칭] 영문 일치:', newsProductName, '→', c.drug.name, '(eng:', short, '/', long, ')');
+          return c.drug;
+        }
       }
     }
   }
 
-  // 4단계: 한글 기본명 매칭 (최소 3자)
-  if (newsKor.length >= 3) {
+  // 4단계: 한글 기본명 매칭 (최소 4자로 강화, 70% 이상)
+  if (newsKor.length >= 4) {
     for (const c of cache) {
-      if (c.kor.length >= 3) {
+      if (c.kor.length >= 4) {
         const short = newsKor.length <= c.kor.length ? newsKor : c.kor;
         const long = newsKor.length > c.kor.length ? newsKor : c.kor;
-        if (long.includes(short) && short.length / long.length >= 0.5) return c.drug;
+        // 더 엄격한 매칭: 70% 이상 일치
+        if (long.includes(short) && short.length >= 4 && short.length / long.length >= 0.7) {
+          console.log('[뉴스매칭] 한글 일치:', newsProductName, '→', c.drug.name, '(kor:', short, '/', long, ')');
+          return c.drug;
+        }
       }
     }
   }
 
-  // 5단계: 성분명(ingredient) 매칭 - 뉴스 약품명이 성분명에 직접 포함되는 경우만
+  // 5단계: 한글-영문 교차 매칭 (사전 기반이므로 최소 길이 2자로 완화)
+  if (newsKor.length >= 2) {
+    // 뉴스 한글명을 영문으로 변환하여 매칭
+    const newsKorToEng = DRUG_NAME_MAP[newsKor] || '';
+    for (const c of cache) {
+      // 방법 1: 원내 약품명에 뉴스 한글명이 포함되어 있는지 확인
+      if (c.fullName && c.fullName.includes(newsKor)) {
+        console.log('[뉴스매칭] 한글→전체명 일치:', newsProductName, '→', c.drug.name, '(kor:', newsKor, ')');
+        return c.drug;
+      }
+      // 방법 2: 뉴스 한글명을 영문으로 변환 후 원내 약품명과 비교
+      if (newsKorToEng && c.fullName.includes(newsKorToEng)) {
+        console.log('[뉴스매칭] 한글→영문 매핑:', newsProductName, '→', c.drug.name, '(kor:', newsKor, '→', newsKorToEng, ')');
+        return c.drug;
+      }
+      // 방법 3: 뉴스 한글명을 영문으로 변환 후 정규화된 약품명과 비교
+      if (newsKorToEng && c.norm.includes(newsKorToEng)) {
+        console.log('[뉴스매칭] 한글→영문 매핑(norm):', newsProductName, '→', c.drug.name, '(kor:', newsKor, '→', newsKorToEng, ')');
+        return c.drug;
+      }
+    }
+  }
+  if (newsEng.length >= 6) {
+    for (const c of cache) {
+      // 원내 약품명에 뉴스 영문명이 포함되어 있는지 확인
+      if (c.fullName && c.fullName.includes(newsEng)) {
+        console.log('[뉴스매칭] 영문→전체명 일치:', newsProductName, '→', c.drug.name, '(eng:', newsEng, ')');
+        return c.drug;
+      }
+    }
+  }
+
+  // 6단계: 성분명(ingredient) 매칭 - 최소 길이 강화
   for (const c of cache) {
     if (!c.ingredient) continue;
-    if (c.ingKor.length >= 3 && newsProductName.includes(c.ingKor)) return c.drug;
-    if (c.ingEng.length >= 6 && newsLower.includes(c.ingEng)) return c.drug;
+    // 한글 성분명: 최소 4자 이상
+    if (c.ingKor.length >= 4 && newsProductName.includes(c.ingKor)) {
+      console.log('[뉴스매칭] 성분(한글) 일치:', newsProductName, '→', c.drug.name, '(ing:', c.ingKor, ')');
+      return c.drug;
+    }
+    // 영문 성분명: 최소 8자 이상
+    if (c.ingEng.length >= 8 && newsLower.includes(c.ingEng)) {
+      console.log('[뉴스매칭] 성분(영문) 일치:', newsProductName, '→', c.drug.name, '(ing:', c.ingEng, ')');
+      return c.drug;
+    }
   }
 
   return null;
@@ -3095,6 +3190,12 @@ function addMasterDrug() {
   saveState();
   renderMasterList();
   populateDrugSelects();
+  
+  // 재고현황 탭 업데이트 (추가된 약품이 재고에 있으면 바로 표시)
+  renderInventory();
+  renderUsageSurplus();
+  renderDashboard();
+  
   document.getElementById('newDrugCode').value = '';
   document.getElementById('newDrugName').value = '';
   document.getElementById('newDrugSpec').value = '';
@@ -3109,6 +3210,11 @@ function removeMasterDrug(code, type) {
   }
   saveState();
   renderMasterList();
+  
+  // 재고현황 탭 업데이트 (삭제된 약품이 재고에서 제외됨)
+  renderInventory();
+  renderUsageSurplus();
+  renderDashboard();
 }
 
 function renderHistoryTable() {
@@ -4045,6 +4151,8 @@ async function loadNews(forceRefresh) {
 
   if (newsLoaded && !forceRefresh) {
     loadingEl.classList.add('hidden');
+    // 매칭 캐시 초기화 (마스터 변경 반영)
+    _newsMatchCache = null;
     applyNewsFilters();
     return;
   }
@@ -4055,10 +4163,17 @@ async function loadNews(forceRefresh) {
   document.getElementById('newsPagination').innerHTML = '';
 
   try {
-    const opts = {};
+    const opts = {
+      // 브라우저 캐시 방지
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    };
     if (forceRefresh) {
       opts.method = 'POST';
-      opts.headers = { 'Content-Type': 'application/json' };
+      opts.headers['Content-Type'] = 'application/json';
       const token = sessionStorage.getItem('authToken');
       if (token) opts.headers['X-Admin-Token'] = token;
     }
@@ -4089,6 +4204,8 @@ async function loadNews(forceRefresh) {
     }
     newsLoaded = true; // 성공 시에만 캐시
 
+    // 매칭 캐시 초기화
+    _newsMatchCache = null;
     newsCurrentPage = 1;
     applyNewsFilters();
   } catch (e) {

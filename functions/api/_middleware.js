@@ -1,9 +1,8 @@
-// API 미들웨어: CORS + 관리자 인증 체크
-// PUT/DELETE 요청은 유효한 세션 토큰 필요
+// API 미들웨어: CORS + 데이터 타입 추출
+// 비밀번호 인증 없이 type만 확인
 
 export async function onRequest(context) {
   const { request, env, next } = context;
-  const url = new URL(request.url);
 
   // CORS 헤더
   const corsHeaders = {
@@ -17,7 +16,7 @@ export async function onRequest(context) {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
-  // 쓰기 요청(PUT/DELETE)은 Authorization 헤더 확인
+  // PUT 요청: Authorization 헤더에서 타입만 추출 (인증 없음)
   if (request.method === 'PUT' || request.method === 'DELETE') {
     const auth = request.headers.get('Authorization');
     if (!auth || !auth.startsWith('Bearer ')) {
@@ -27,29 +26,16 @@ export async function onRequest(context) {
       });
     }
 
-    // 토큰 검증: "type:hash" 형태
-    const token = auth.slice(7);
-    const [type, hash] = token.split(':');
-    if (!type || !hash) {
-      return new Response(JSON.stringify({ error: '잘못된 토큰' }), {
+    const token = auth.slice(7).trim();
+    // 토큰이 'chemo' 또는 'general' 직접 전달
+    const type = ['chemo', 'general'].includes(token) ? token : token.split(':')[0];
+    if (!['chemo', 'general'].includes(type)) {
+      return new Response(JSON.stringify({ error: '잘못된 타입' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // DB에서 해당 관리자의 password_hash 확인
-    const row = await env.DB.prepare(
-      'SELECT password_hash FROM admin_config WHERE id = ?'
-    ).bind(type).first();
-
-    if (!row || row.password_hash !== hash) {
-      return new Response(JSON.stringify({ error: '권한 없음' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 인증된 관리자 타입을 context에 저장
     context.data = { adminType: type };
   }
 

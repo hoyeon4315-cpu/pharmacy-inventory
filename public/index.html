@@ -480,9 +480,16 @@ body.general-mode .text-blue { color:#16a34a; }
 <!-- ==================== 통계 (항암제 전용) ==================== -->
 <div class="tab" id="tab-stats">
   <div class="card">
-    <div class="flex-between mb-8">
+    <div class="flex-between mb-8" style="flex-wrap:wrap;gap:8px;">
       <h3 style="border:none;padding:0;margin:0;">입원/외래 통계</h3>
-      <span style="font-size:12px;color:#64748b;" id="statsDateLabel"></span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <select id="statsViewMode" onchange="renderStats()" style="font-size:12px;padding:4px 8px;">
+          <option value="daily">당일</option>
+          <option value="monthly">월별</option>
+        </select>
+        <input type="month" id="statsMonth" style="font-size:12px;padding:4px 8px;display:none;" onchange="renderStats()">
+        <span style="font-size:12px;color:#64748b;" id="statsDateLabel"></span>
+      </div>
     </div>
     <!-- 요약 카드 -->
     <div class="grid-4" id="statsSummaryCards" style="margin-bottom:12px;"></div>
@@ -493,10 +500,12 @@ body.general-mode .text-blue { color:#16a34a; }
         <div id="statsCategoryTable"></div>
       </div>
       <div>
-        <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">처방의별</h4>
+        <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">진료과별</h4>
         <div id="statsDoctorTable"></div>
       </div>
     </div>
+    <!-- 항암제 성분별 × 진료과 매트릭스 -->
+    <div id="statsChemoMatrix" style="margin-bottom:12px;"></div>
     <!-- 약품별 상세 -->
     <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">약품별 사용량</h4>
     <div style="overflow-x:auto;">
@@ -824,6 +833,119 @@ const BUILTIN_DRUGS = [
 {code:'XLASPAR1',name:'L-Asparaginase inj'}
 ];
 
+// 처방의 → 진료과 코드 매핑 (PDF: 2026년 4월 진료과 교수별 담당 전담간호사)
+const DOCTOR_DEPT_MAP = {
+  // IMR (호흡기내과)
+  '정윤정':'IMR','김병기':'IMR','조수민':'IMR','유영미':'IMR','이무용':'IMR','박종선':'IMR',
+  // CV (심혈관내과)
+  '장재식':'CV','정재훈':'CV','이은미':'CV','김강희':'CV',
+  // IMH (혈액종양내과)
+  '김달용':'IMH','박권오':'IMH','이유은':'IMH',
+  // GIC (소화기병센터)
+  '고문수':'GIC','은종렬':'GIC','임윤정':'GIC','오동준':'GIC','남지형':'GIC',
+  // IMN (신장내과)
+  '신성준':'IMN','송정인':'IMN','박재윤':'IMN','이장욱':'IMN',
+  // IME (내분비내과)
+  '박성연':'IME',
+  // IMI (감염내과)
+  '최승임':'IMI',
+  // IMJ (류마티스내과)
+  '이광훈':'IMJ',
+  // TS (흉부외과)
+  '최민석':'TS','최재원':'TS',
+  // NS (신경외과)
+  '양승엽':'NS','이수환':'NS','이정준':'NS','김우진':'NS',
+  // OG (산부인과)
+  '이채형':'OG','윤상호':'OG','김란희':'OG','김은진':'OG','김혜림':'OG','조혜정':'OG','백용해':'OG',
+  // GS (외과)
+  '박영진':'GS','김언빈':'GS','곽범석':'GS','황두영':'GS','김성룡':'GS','반은정':'GS',
+  '김하경':'GS','류윤범':'GS','이해원':'GS','윤현식':'GS','배정범':'GS','김형석':'GS',
+  // UR (비뇨의학과)
+  '임영화':'UR',
+  // OS (정형외과)
+  '임군일':'OS','김진영':'OS','이상형':'OS','양재준':'OS','박주현':'OS','최준영':'OS','이도원':'OS',
+  // OT (이비인후과)
+  '오종현':'OT',
+  // NR (신경과)
+  '정상욱':'NR','박수련':'NR','김남희':'NR','곽동석':'NR','서지원':'NR',
+  // RH (재활의학과)
+  '김동억':'RH','김광기':'RH',
+  // 소아청소년과
+  '정석호':'PD',
+  // 호스피스
+  '오희근':'Hospice',
+};
+
+// 항암제 코드 → 성분명(INN) 매핑
+const CODE_TO_INGREDIENT = {};
+(function() {
+  const map = {
+    'Paclitaxel(albumin)':['XAPTX100'],
+    'Pemetrexed':['XPEMET1W','XPEMET5W','XPEMET5X','XPEMET1X'],
+    'Bevacizumab':['XBEVA100','XBEVA400','XBEVA1W','XBEVA4W'],
+    'Bendamustine':['XBENDAM2W','XBENDAM10W'],
+    'Bleomycin':['XBLEO15'],
+    'Blinatumomab':['XBLINA3'],
+    'Doxorubicin(lip)':['XADM20B'],
+    'Irinotecan':['XIRIN100W','XIRIN40W','XBELOT2'],
+    'Carboplatin':['XCBPL150W','XCBPL450W','XCBPL600'],
+    'Cisplatin':['XCISP10','XCISP50'],
+    'Ramucirumab':['XRAMUC1','XRAMUC5'],
+    'Dacarbazine':['XDACA200'],
+    'Decitabine':['XDECITA'],
+    'Daratumumab':['XDARAT1','XDARAT4'],
+    'Daunorubicin':['XDAUN20W','XDAUN20Y'],
+    'Docetaxel':['XDOCE12','XDOCE1-20','XDOCE1-80','XDOCE2W','XDOCE8W','XDOCE20','XDOCE80'],
+    'Doxorubicin':['XADM10W','XADM50W'],
+    'Oxaliplatin':['XOLALIP1','XOLALIP','XOXALP15','XOXALP5'],
+    'Cyclophosphamide':['XCPHO500'],
+    'T-DXd':['XTRZDER'],
+    'Cetuximab':['XCETUX'],
+    'Etoposide':['XETOPO2Y'],
+    'Fludarabine':['XFLUDAR50'],
+    '5-FU':['X5FU1','X5FU5'],
+    'Obinutuzumab':['XOBINU1'],
+    'Gemcitabine':['XGEMCIT1L','XGEMCIT2L','XGEMCIT1W','XGEMCIT2W'],
+    'Eribulin':['XERIBU'],
+    'Trastuzumab':['XTRZMAB','XTRZSC','XTRZEM4','XTRZMAB1W'],
+    'Ifosfamide':['XIFOS'],
+    'Topotecan':['XTOPO4','XTOPO4W'],
+    'Idarubicin':['XIDARU5','XIDARU5W','XIDARU5Y'],
+    'Durvalumab':['XDURVAL1','XDURVAL5'],
+    'Cabazitaxel':['XCABAZT6'],
+    'T-DM1':['XTRZEM1','XTRZEM16'],
+    'Pembrolizumab':['XPEMB1'],
+    'Carfilzomib':['XCARFIL3','XCARFIL6'],
+    'Rituximab':['XRITUX1','XRITUX5','XRITUX14SC','XRITUX1R','XRITUX5R'],
+    'Methotrexate':['XMTX5','XMTX50','XMTX1G','XMTX50Y'],
+    'Mitoxantrone':['XMITOX20'],
+    'Vinorelbine':['XVINORE10','XVINORE50'],
+    'Nivolumab':['XNIVOL1','XNIVOL2','XNIVOL24'],
+    'Irinotecan(lip)':['XIRIN43'],
+    'Paclitaxel':['XPTAX100','XPTAX300','XPTAX30','XPTAX30W'],
+    'Pertuzumab':['XPERTZMAB'],
+    'Pertuzumab+Tras':['XPERTRA6','XPERTRA12'],
+    'Siltuximab':['XSILTU1Y'],
+    'Atezolizumab':['XATEZOL'],
+    'Temsirolimus':['XTEMSI'],
+    'Arsenic trioxide':['XASO1','XASO1W'],
+    'Sacituzumab':['XSACITUZ'],
+    'Brentuximab':['XBRENTU'],
+    'Vinblastine':['XVINB10'],
+    'Bortezomib':['XBORTE3.5'],
+    'Azacitidine':['XAZAC100','XAZAC100W'],
+    'Vincristine':['XVINC1','XVINC2'],
+    'Ipilimumab':['XIPIL5'],
+    'Aflibercept':['XAFLIB1','XAFLIB2'],
+    'Lurbinectedin':['XLURBIN4'],
+    'Carmustine':['XCARMUS'],
+    'L-Asparaginase':['XLASPAR1'],
+    'Cytarabine':['XCYTA2W'],
+    'Mitomycin-C':['XMITOMY10'],
+  };
+  for (var ing in map) map[ing].forEach(function(c){ CODE_TO_INGREDIENT[c] = ing; });
+})();
+
 // 원내의약품분류 항암제 코드 목록 (특수조제 필터용)
 const ANTICANCER_CODES = new Set(['6MP5W','ASCIMIN4','X5FU1','XADM10W','XADM20B','XADM50W','XAFLIB1','XAFLIB2','XAPTX100','XASO1W','XATEZOL','XAVLMAB','XAZAC100W','XBELOT2','XBENDAM10W','XBENDAM2W','XBEVA1W','XBEVA4W','XBLEO15','XBLINA3','XBORTE3.5','XBRENTU','XCABAZT6','XCARFIL3','XCARFIL6','XCARMUS','XCBPL150W','XCBPL450W','XCBPL600','XCETUX','XCISP10','XCISP50','XCPHO500','XCYTA2W','XDACA200','XDACT5W','XDARAT1','XDARAT4','XDAUN20Y','XDECITA','XDOCE12','XDOCE2W','XDOCE8W','XDTLMAB','XDURVAL1','XDURVAL5','XERIBU','XETOPO2Y','XFLUDAR50','XGEMCIT1L','XGEMCIT2L','XGOSE','XGOSELA','XIDARU5W','XIDARU5Y','XIFOS','XIPIL5','XIRIN100W','XIRIN40W','XIRIN43','XLASPAR1','XLEUPD3','XLEUPD375','XLURBIN4','XMITOMY10','XMITOX20','XMTX5','XMTX50Y','XNIVOL1','XNIVOL2','XOBINU1','XONCOTI12','XOXALP15','XOXALP5','XPADCEV','XPEMB1','XPEMET1X','XPEMET5X','XPERTRA12','XPERTRA6','XPERTZMAB','XPTAX100','XPTAX300','XPTAX30W','XRAMUC1','XRAMUC5','XRITUX1','XRITUX14SC','XRITUX1R','XRITUX5','XRITUX5R','XSACITUZ','XSILTU1Y','XTEMSI','XTISLE1','XTOPO4','XTOPO4W','XTRZDER','XTRZEM1','XTRZEM16','XTRZEM4','XTRZMAB1W','XTRZSC','XVINB10','XVINC2','XVINORE10','XXDEGAR1','XXDEGAR8','XXFULVE2W','XXLEUPD11','XXLEUPD22','XXLEUPD45','XXLEUPD7','XZOLBE']);
 
@@ -1021,136 +1143,178 @@ function buildChemoStats(date) {
 }
 
 // ── 통계 탭 렌더링 (항암제 전용) ──
+function getDeptCode(doctor) {
+  if (!doctor) return '기타';
+  return DOCTOR_DEPT_MAP[doctor.trim()] || '기타';
+}
+function getIngredient(code) {
+  return CODE_TO_INGREDIENT[code] || '';
+}
+function getStatsData() {
+  var mode = document.getElementById('statsViewMode').value;
+  var monthInput = document.getElementById('statsMonth');
+  monthInput.style.display = mode === 'monthly' ? '' : 'none';
+  if (mode === 'daily') {
+    return { mix: state.inpatientMix || [], out: state.outpatientData || [], label: getWorkDate(), days: 1 };
+  }
+  // 월별: dailyData에서 해당 월 데이터 집계
+  var ym = monthInput.value;
+  if (!ym) { var d = new Date(); ym = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); monthInput.value = ym; }
+  var mix = [], out = [], dayCount = 0;
+  Object.keys(state.dailyData).forEach(function(date) {
+    if (date.substring(0,7) === ym) {
+      var dd = state.dailyData[date];
+      if (dd.inpatientMix) { mix = mix.concat(dd.inpatientMix); dayCount++; }
+      if (dd.outpatientData) out = out.concat(dd.outpatientData);
+    }
+  });
+  // 현재 작업일이 해당 월이면 현재 데이터도 포함
+  var wd = getWorkDate();
+  if (wd.substring(0,7) === ym && (state.inpatientMix||[]).length > 0) {
+    var alreadyHas = Object.keys(state.dailyData).some(function(d){ return d === wd && state.dailyData[d].inpatientMix; });
+    if (!alreadyHas) {
+      mix = mix.concat(state.inpatientMix || []);
+      out = out.concat(state.outpatientData || []);
+      dayCount++;
+    }
+  }
+  return { mix: mix, out: out, label: ym + ' (' + dayCount + '일)', days: dayCount };
+}
 function renderStats() {
-  var mix = state.inpatientMix || [];
-  var out = state.outpatientData || [];
+  var sd = getStatsData();
+  var mix = sd.mix, out = sd.out;
   var emptyEl = document.getElementById('statsEmpty');
   var cardsEl = document.getElementById('statsSummaryCards');
   var catEl = document.getElementById('statsCategoryTable');
-  var doctorEl = document.getElementById('statsDoctorTable');
+  var deptEl = document.getElementById('statsDoctorTable');
   var drugTbl = document.getElementById('statsDrugTable');
   var dateLabel = document.getElementById('statsDateLabel');
   var detailGrid = document.getElementById('statsDetailGrid');
+  var chemoMatrixEl = document.getElementById('statsChemoMatrix');
 
   if (mix.length === 0 && out.length === 0) {
     emptyEl.classList.remove('hidden');
-    cardsEl.innerHTML = '';
-    catEl.innerHTML = '';
-    doctorEl.innerHTML = '';
-    drugTbl.querySelector('thead').innerHTML = '';
-    drugTbl.querySelector('tbody').innerHTML = '';
-    detailGrid.style.display = 'none';
+    cardsEl.innerHTML = ''; catEl.innerHTML = ''; deptEl.innerHTML = '';
+    drugTbl.querySelector('thead').innerHTML = ''; drugTbl.querySelector('tbody').innerHTML = '';
+    detailGrid.style.display = 'none'; chemoMatrixEl.innerHTML = '';
     return;
   }
   emptyEl.classList.add('hidden');
   detailGrid.style.display = '';
-  dateLabel.textContent = getWorkDate();
+  dateLabel.textContent = sd.label;
 
-  // ── 환자건수 (unique) ──
-  var inPts = {}, outPts = {}, allPts = {};
-  mix.forEach(function(r) { var k = r.patient||r.regNo||'?'; inPts[k]=1; allPts[k]=1; });
-  out.forEach(function(r) { var k = r.patient||r.regNo||'?'; outPts[k]=1; allPts[k]=1; });
-  var inPtsCnt = Object.keys(inPts).length, outPtsCnt = Object.keys(outPts).length, totalPtsCnt = Object.keys(allPts).length;
+  // ── 환자/처방/약품 건수 ──
+  var inPts={},outPts={},allPts={},inRx={},outRx={},inDrugs={},outDrugs={},allDrugs={};
+  mix.forEach(function(r){var k=r.patient||r.regNo||'?';inPts[k]=1;allPts[k]=1;inRx[k+'|'+r.code]=1;inDrugs[r.code]=1;allDrugs[r.code]=1;});
+  out.forEach(function(r){var k=r.patient||r.regNo||'?';outPts[k]=1;allPts[k]=1;outRx[k+'|'+r.code]=1;outDrugs[r.code]=1;allDrugs[r.code]=1;});
+  var inP=Object.keys(inPts).length,outP=Object.keys(outPts).length,totP=Object.keys(allPts).length;
+  var inR=Object.keys(inRx).length,outR=Object.keys(outRx).length;
 
-  // ── 처방건수 = unique (환자, 약품코드) ──
-  var inRx = {}, outRx = {};
-  mix.forEach(function(r) { inRx[(r.patient||r.regNo||'?')+'|'+r.code] = 1; });
-  out.forEach(function(r) { outRx[(r.patient||r.regNo||'?')+'|'+r.code] = 1; });
-  var inRxCnt = Object.keys(inRx).length, outRxCnt = Object.keys(outRx).length;
-
-  // ── 약품건수 = unique 약품코드 ──
-  var inDrugs = {}, outDrugs = {}, allDrugs = {};
-  mix.forEach(function(r) { inDrugs[r.code]=1; allDrugs[r.code]=1; });
-  out.forEach(function(r) { outDrugs[r.code]=1; allDrugs[r.code]=1; });
-
-  // 요약 카드
   cardsEl.innerHTML =
-    '<div class="stat-card" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;">'
-    + '<div style="font-size:11px;color:#3b82f6;font-weight:600;">환자건수</div>'
-    + '<div style="font-size:22px;font-weight:800;color:#1e40af;">' + totalPtsCnt + '</div>'
-    + '<div style="font-size:11px;color:#64748b;">입원 ' + inPtsCnt + ' / 외래 ' + outPtsCnt + '</div></div>'
-    + '<div class="stat-card" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;">'
-    + '<div style="font-size:11px;color:#22c55e;font-weight:600;">처방건수</div>'
-    + '<div style="font-size:22px;font-weight:800;color:#15803d;">' + (inRxCnt+outRxCnt) + '</div>'
-    + '<div style="font-size:11px;color:#64748b;">입원 ' + inRxCnt + ' / 외래 ' + outRxCnt + '</div></div>'
-    + '<div class="stat-card" style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;">'
-    + '<div style="font-size:11px;color:#eab308;font-weight:600;">약품건수</div>'
-    + '<div style="font-size:22px;font-weight:800;color:#a16207;">' + Object.keys(allDrugs).length + '</div>'
-    + '<div style="font-size:11px;color:#64748b;">입원 ' + Object.keys(inDrugs).length + ' / 외래 ' + Object.keys(outDrugs).length + '</div></div>'
-    + '<div class="stat-card" style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:8px;padding:10px 14px;">'
-    + '<div style="font-size:11px;color:#ec4899;font-weight:600;">데이터 행수</div>'
-    + '<div style="font-size:22px;font-weight:800;color:#be185d;">' + (mix.length+out.length) + '</div>'
-    + '<div style="font-size:11px;color:#64748b;">입원 ' + mix.length + ' / 외래 ' + out.length + '</div></div>';
+    '<div class="stat-card" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#3b82f6;font-weight:600;">환자건수</div><div style="font-size:22px;font-weight:800;color:#1e40af;">'+totP+'</div><div style="font-size:11px;color:#64748b;">입원 '+inP+' / 외래 '+outP+'</div></div>'
+    +'<div class="stat-card" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#22c55e;font-weight:600;">처방건수</div><div style="font-size:22px;font-weight:800;color:#15803d;">'+(inR+outR)+'</div><div style="font-size:11px;color:#64748b;">입원 '+inR+' / 외래 '+outR+'</div></div>'
+    +'<div class="stat-card" style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#eab308;font-weight:600;">약품건수</div><div style="font-size:22px;font-weight:800;color:#a16207;">'+Object.keys(allDrugs).length+'</div><div style="font-size:11px;color:#64748b;">입원 '+Object.keys(inDrugs).length+' / 외래 '+Object.keys(outDrugs).length+'</div></div>'
+    +'<div class="stat-card" style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#ec4899;font-weight:600;">데이터 행수</div><div style="font-size:22px;font-weight:800;color:#be185d;">'+(mix.length+out.length)+'</div><div style="font-size:11px;color:#64748b;">입원 '+mix.length+' / 외래 '+out.length+'</div></div>';
 
   // ── 카테고리별 (입원) ──
   var cats = {};
-  mix.forEach(function(r) {
-    if (!cats[r.category]) cats[r.category] = { rows: 0, pts: {}, rx: {} };
-    cats[r.category].rows++;
-    cats[r.category].pts[r.patient||r.regNo||'?'] = 1;
-    cats[r.category].rx[(r.patient||r.regNo||'?')+'|'+r.code] = 1;
+  mix.forEach(function(r){
+    if(!cats[r.category])cats[r.category]={pts:{},rx:{}};
+    cats[r.category].pts[r.patient||r.regNo||'?']=1;
+    cats[r.category].rx[(r.patient||r.regNo||'?')+'|'+r.code]=1;
   });
-  var catHtml = '<table class="data-table"><thead><tr><th>구분</th><th style="text-align:right">환자</th><th style="text-align:right">처방</th></tr></thead><tbody>';
-  Object.keys(cats).forEach(function(c) {
-    catHtml += '<tr><td>' + escapeHtml(c) + '</td><td class="num">' + Object.keys(cats[c].pts).length + '</td><td class="num">' + Object.keys(cats[c].rx).length + '</td></tr>';
-  });
-  catHtml += '</tbody></table>';
+  var catHtml='<table class="data-table"><thead><tr><th>구분</th><th style="text-align:right">환자</th><th style="text-align:right">처방</th></tr></thead><tbody>';
+  Object.keys(cats).forEach(function(c){catHtml+='<tr><td>'+escapeHtml(c)+'</td><td class="num">'+Object.keys(cats[c].pts).length+'</td><td class="num">'+Object.keys(cats[c].rx).length+'</td></tr>';});
+  catHtml+='</tbody></table>';
   catEl.innerHTML = Object.keys(cats).length > 0 ? catHtml : '<span style="font-size:12px;color:#94a3b8;">카테고리 데이터 없음</span>';
 
-  // ── 처방의별 ──
-  var doctors = {};
-  function addDoctorStat(r) {
-    if (!r.doctor) return;
-    if (!doctors[r.doctor]) doctors[r.doctor] = { pts: {}, rx: {} };
-    doctors[r.doctor].pts[r.patient||r.regNo||'?'] = 1;
-    doctors[r.doctor].rx[(r.patient||r.regNo||'?')+'|'+r.code] = 1;
-  }
-  mix.forEach(addDoctorStat);
-  var docKeys = Object.keys(doctors).sort(function(a,b) { return Object.keys(doctors[b].pts).length - Object.keys(doctors[a].pts).length; });
-  var docHtml = '<table class="data-table"><thead><tr><th>처방의</th><th style="text-align:right">환자</th><th style="text-align:right">처방</th></tr></thead><tbody>';
-  docKeys.forEach(function(d) {
-    docHtml += '<tr><td>' + escapeHtml(d) + '</td><td class="num">' + Object.keys(doctors[d].pts).length + '</td><td class="num">' + Object.keys(doctors[d].rx).length + '</td></tr>';
+  // ── 진료과별 (처방의→진료과 매핑) ──
+  var depts = {};
+  mix.concat(out).forEach(function(r){
+    var dept = getDeptCode(r.doctor);
+    if(!depts[dept])depts[dept]={pts:{},rx:{}};
+    depts[dept].pts[r.patient||r.regNo||'?']=1;
+    depts[dept].rx[(r.patient||r.regNo||'?')+'|'+r.code]=1;
   });
-  docHtml += '</tbody></table>';
-  doctorEl.innerHTML = docKeys.length > 0 ? docHtml : '<span style="font-size:12px;color:#94a3b8;">처방의 데이터 없음</span>';
+  var deptKeys=Object.keys(depts).sort(function(a,b){return Object.keys(depts[b].rx).length-Object.keys(depts[a].rx).length;});
+  var deptHtml='<table class="data-table"><thead><tr><th>진료과</th><th style="text-align:right">환자</th><th style="text-align:right">처방</th></tr></thead><tbody>';
+  deptKeys.forEach(function(d){deptHtml+='<tr><td>'+escapeHtml(d)+'</td><td class="num">'+Object.keys(depts[d].pts).length+'</td><td class="num">'+Object.keys(depts[d].rx).length+'</td></tr>';});
+  deptHtml+='</tbody></table>';
+  deptEl.innerHTML = deptKeys.length > 0 ? deptHtml : '<span style="font-size:12px;color:#94a3b8;">진료과 데이터 없음</span>';
+
+  // ── 항암제 성분별 × 진료과 매트릭스 (처방건수) ──
+  var deptOrder = ['GS','GIC','IMH','IMR','OG','IMJ','UR','IMN','OR','기타'];
+  var ingDept = {}; // { ingredient: { dept: Set(patient|code) } }
+  var usedDepts = {};
+  mix.concat(out).forEach(function(r){
+    var ing = getIngredient(r.code);
+    if(!ing) return;
+    var dept = getDeptCode(r.doctor);
+    if(!ingDept[ing])ingDept[ing]={};
+    if(!ingDept[ing][dept])ingDept[ing][dept]=new Set();
+    ingDept[ing][dept].add((r.patient||r.regNo||'?')+'|'+r.code);
+    usedDepts[dept]=1;
+  });
+  var ingKeys = Object.keys(ingDept).sort();
+  if(ingKeys.length > 0){
+    var activeDepts = deptOrder.filter(function(d){return usedDepts[d];});
+    // 활성 진료과에 없는 것 추가
+    Object.keys(usedDepts).forEach(function(d){if(activeDepts.indexOf(d)<0)activeDepts.push(d);});
+    var mHtml='<h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">항암제 성분별 진료과 통계 (처방건수)</h4>';
+    mHtml+='<div style="overflow-x:auto;"><table class="data-table"><thead><tr><th>성분명</th>';
+    activeDepts.forEach(function(d){mHtml+='<th style="text-align:center;min-width:40px;">'+d+'</th>';});
+    mHtml+='<th style="text-align:right;font-weight:700;">합계</th></tr></thead><tbody>';
+    var colTotals={};activeDepts.forEach(function(d){colTotals[d]=0;});var grandTotal=0;
+    ingKeys.forEach(function(ing){
+      mHtml+='<tr><td>'+escapeHtml(ing)+'</td>';
+      var rowTotal=0;
+      activeDepts.forEach(function(d){
+        var cnt=ingDept[ing][d]?ingDept[ing][d].size:0;
+        mHtml+='<td class="num">'+(cnt||'')+'</td>';
+        rowTotal+=cnt;colTotals[d]+=cnt;
+      });
+      grandTotal+=rowTotal;
+      mHtml+='<td class="num" style="font-weight:700;">'+rowTotal+'</td></tr>';
+    });
+    mHtml+='<tr style="font-weight:700;background:#f1f5f9;"><td>합계</td>';
+    activeDepts.forEach(function(d){mHtml+='<td class="num">'+colTotals[d]+'</td>';});
+    mHtml+='<td class="num">'+grandTotal+'</td></tr>';
+    mHtml+='</tbody></table></div>';
+    chemoMatrixEl.innerHTML = mHtml;
+  } else {
+    chemoMatrixEl.innerHTML = '';
+  }
 
   // ── 약품별 상세 ──
   var drugMap = {};
-  mix.forEach(function(r) {
-    if (!drugMap[r.code]) drugMap[r.code] = { name: r.name, inQty: 0, outQty: 0, inPts: {}, outPts: {}, inRx: {}, outRx: {} };
-    drugMap[r.code].inQty += r.totalQty || r.dose || 0;
-    drugMap[r.code].inPts[r.patient||r.regNo||'?'] = 1;
-    drugMap[r.code].inRx[(r.patient||r.regNo||'?')] = 1;
+  mix.forEach(function(r){
+    if(!drugMap[r.code])drugMap[r.code]={name:r.name,inQty:0,outQty:0,inPts:{},outPts:{}};
+    drugMap[r.code].inQty+=r.totalQty||r.dose||0;
+    drugMap[r.code].inPts[r.patient||r.regNo||'?']=1;
   });
-  out.forEach(function(r) {
-    if (!drugMap[r.code]) drugMap[r.code] = { name: r.name, inQty: 0, outQty: 0, inPts: {}, outPts: {}, inRx: {}, outRx: {} };
-    drugMap[r.code].outQty += r.totalQty || 0;
-    drugMap[r.code].outPts[r.patient||r.regNo||'?'] = 1;
-    drugMap[r.code].outRx[(r.patient||r.regNo||'?')] = 1;
+  out.forEach(function(r){
+    if(!drugMap[r.code])drugMap[r.code]={name:r.name,inQty:0,outQty:0,inPts:{},outPts:{}};
+    drugMap[r.code].outQty+=r.totalQty||0;
+    drugMap[r.code].outPts[r.patient||r.regNo||'?']=1;
   });
-  var drugRows = [];
-  Object.keys(drugMap).forEach(function(code) {
-    var d = drugMap[code];
-    drugRows.push({
-      code: code, name: d.name,
-      inQty: Math.round(d.inQty*10)/10, outQty: Math.round(d.outQty*10)/10,
-      inPts: Object.keys(d.inPts).length, outPts: Object.keys(d.outPts).length,
-      inRx: Object.keys(d.inRx).length, outRx: Object.keys(d.outRx).length,
-      total: Math.round((d.inQty + d.outQty)*10)/10
-    });
+  var drugRows=[];
+  Object.keys(drugMap).forEach(function(code){
+    var d=drugMap[code];
+    drugRows.push({code:code,name:d.name,inQty:Math.round(d.inQty*10)/10,outQty:Math.round(d.outQty*10)/10,
+      inPts:Object.keys(d.inPts).length,outPts:Object.keys(d.outPts).length,
+      total:Math.round((d.inQty+d.outQty)*10)/10});
   });
-  drugRows.sort(function(a,b) { return b.total - a.total; });
-
-  var thead = '<tr><th>약품코드</th><th>약품명</th><th style="text-align:right">입원 환자</th><th style="text-align:right">입원 사용량</th><th style="text-align:right">외래 환자</th><th style="text-align:right">외래 사용량</th><th style="text-align:right">합계</th></tr>';
-  var tbody = '';
-  drugRows.forEach(function(r) {
-    tbody += '<tr><td>' + escapeHtml(r.code) + '</td><td>' + escapeHtml(r.name) + '</td>'
-      + '<td class="num">' + r.inPts + '</td><td class="num">' + r.inQty + '</td>'
-      + '<td class="num">' + r.outPts + '</td><td class="num">' + r.outQty + '</td>'
-      + '<td class="num" style="font-weight:700;">' + r.total + '</td></tr>';
+  drugRows.sort(function(a,b){return b.total-a.total;});
+  var thead='<tr><th>약품코드</th><th>약품명</th><th style="text-align:right">입원 환자</th><th style="text-align:right">입원 사용량</th><th style="text-align:right">외래 환자</th><th style="text-align:right">외래 사용량</th><th style="text-align:right">합계</th></tr>';
+  var tbodyH='';
+  drugRows.forEach(function(r){
+    tbodyH+='<tr><td>'+escapeHtml(r.code)+'</td><td>'+escapeHtml(r.name)+'</td>'
+      +'<td class="num">'+r.inPts+'</td><td class="num">'+r.inQty+'</td>'
+      +'<td class="num">'+r.outPts+'</td><td class="num">'+r.outQty+'</td>'
+      +'<td class="num" style="font-weight:700;">'+r.total+'</td></tr>';
   });
-  drugTbl.querySelector('thead').innerHTML = thead;
-  drugTbl.querySelector('tbody').innerHTML = tbody || '<tr><td colspan="7" style="text-align:center;color:#94a3b8;">데이터 없음</td></tr>';
+  drugTbl.querySelector('thead').innerHTML=thead;
+  drugTbl.querySelector('tbody').innerHTML=tbodyH||'<tr><td colspan="7" style="text-align:center;color:#94a3b8;">데이터 없음</td></tr>';
 }
 
 // 연속 업로드 시 D1 요청 debounce (300ms 내 중복 요청 병합)
@@ -1672,7 +1836,7 @@ function parseInventory(wb) {
   state.inventory = data.map(function(r) {
     var qty = parseFloat(String(r[detectedCol] || '0').replace(/,/g,'')) || 0;
     return {
-      code: String(r['대표물품코드'] || r['물품코드'] || '').trim(),
+      code: String(r['대표물품코드'] || '').trim(),
       barcode: String(r['물품코드'] || '').trim(),
       name: String(r['물품명'] || '').trim(),
       spec: String(r['규격'] || '').trim(),
@@ -1681,7 +1845,10 @@ function parseInventory(wb) {
       price: parseFloat(String(r['단가'] || '0').replace(/,/g,'')) || 0,
       total: parseFloat(String(r['총금액'] || '0').replace(/,/g,'')) || 0
     };
-  }).filter(function(r) { return r.code || r.name; });
+  }).filter(function(r) {
+    // 물품코드(숫자) + 대표물품코드 둘 다 있어야 표시
+    return r.code && r.barcode && /^\d+$/.test(r.barcode) && r.name;
+  });
   console.log('[1.xlsx] 파싱완료:', state.inventory.length, '품목, qty>0:', state.inventory.filter(function(r){return r.qty>0;}).length);
   if (state.inventoryFileType === '특수조제') {
     toast('특수조제 파일 감지 - 항암제 목록만 표시됩니다', 'info');
@@ -2041,9 +2208,10 @@ function getDemandForecast() {
     queryDays = Math.round((new Date(qTo) - new Date(qFrom)) / 86400000) + 1;
   }
 
-  // 실재고 매핑
+  // 실재고 매핑 + 물품코드(barcode) 매핑
   const realInvMap = {};
-  getRealInventory().forEach(r => { realInvMap[r.code] = r.realQty; });
+  const barcodeMap = {};
+  getRealInventory().forEach(r => { realInvMap[r.code] = r.realQty; barcodeMap[r.code] = r.barcode || ''; });
 
   // 현재 타입의 마스터만 필터링
   const masterCodes = getCurrentMasterCodes();
@@ -2058,7 +2226,7 @@ function getDemandForecast() {
     const diff = queryDays > 0 ? currentStock - queryNeed : currentStock - Math.ceil(monthlyAvg);
 
     results.push({
-      code: item.code, name: item.name,
+      code: item.code, barcode: barcodeMap[item.code] || item.code, name: item.name,
       periodTotal: item.total,
       dailyAvg: parseFloat(dailyAvg.toFixed(1)),
       monthlyAvg: Math.round(monthlyAvg),
@@ -2322,7 +2490,11 @@ function renderInventory() {
       <td class="text-center"><button class="btn btn-secondary btn-sm" onclick="hideDrug('${r.code}')" title="숨기기" style="padding:2px 6px;font-size:11px;">숨김</button></td>
     </tr>`;
     }).join('');
-    document.getElementById('invSummary').textContent = `총 ${inv.length}개 품목 | 실재고 0인 품목: ${inv.filter(r=>r.realQty===0).length}개 | 냉장약: ${inv.filter(r=>coldSet.has(r.code)).length}개 | 숨긴 품목: ${hiddenInv.length}개`;
+    const totalSystem = inv.reduce((s,r) => s + r.systemQty * r.price, 0);
+    const totalReal = inv.reduce((s,r) => s + r.realQty * r.price, 0);
+    const totalSurplus = inv.reduce((s,r) => s + ((state.surplusFixed||{})[r.code] !== undefined ? (state.surplusFixed||{})[r.code] : (r.manualSurplus||0)) * r.price, 0);
+    document.getElementById('invSummary').innerHTML = `총 ${inv.length}개 품목 | 실재고 0: ${inv.filter(r=>r.realQty===0).length}개 | 냉장: ${inv.filter(r=>coldSet.has(r.code)).length}개 | 숨김: ${hiddenInv.length}개`
+      + `<br><span style="font-size:12px;">전산재고 <b>${formatNum(Math.round(totalSystem))}원</b> | 실재고 <b style="color:#1e40af;">${formatNum(Math.round(totalReal))}원</b> | 잉여 <b style="color:${totalSurplus>=0?'#16a34a':'#dc2626'};">${totalSurplus>=0?'+':''}${formatNum(Math.round(totalSurplus))}원</b></span>`;
   }
 
   // 숨긴 약품 카드 렌더링
@@ -2543,7 +2715,7 @@ function renderForecast() {
       <td class="num">${f.queryNeed || '-'}</td>
       <td class="num ${cls}">${f.diff > 0 ? '+' : ''}${f.diff}</td>
       <td>${f.status === 'shortage' ? '<span class="badge badge-red">부족</span>' : f.status === 'tight' ? '<span class="badge badge-yellow">주의</span>' : '<span class="badge badge-green">정상</span>'}</td>
-      <td><input type="number" class="order-input" data-code="${f.code}" min="0" value=""></td>
+      <td><input type="number" class="order-input" data-code="${f.code}" data-barcode="${f.barcode}" min="0" value=""></td>
     </tr>`;
   }).join('');
 }
@@ -4230,7 +4402,7 @@ function exportOrder() {
     if (!inp) return;
     const qty = parseInt(inp.value);
     if (qty > 0) {
-      rows.push({ '물품코드': inp.dataset.code, '청구수량': qty });
+      rows.push({ '물품코드': inp.dataset.barcode || inp.dataset.code, '청구수량': qty });
     }
   });
   if (rows.length === 0) { toast('발주수량이 입력된 품목이 없습니다.', 'error'); return; }

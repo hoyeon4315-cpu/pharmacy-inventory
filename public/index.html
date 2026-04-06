@@ -1436,11 +1436,12 @@ function renderAmpmStats(sd) {
   sortedDates.forEach(function(date) {
     var dayMix = (dates[date].mix || []).filter(function(r){ return !isVehicle(r.code); });
     var dayOut = (dates[date].out || []).filter(function(r){ return !isVehicle(r.code); });
-    var dt = new Date(date);
+    var dp = date.split('-');
+    var dt = new Date(parseInt(dp[0]), parseInt(dp[1])-1, parseInt(dp[2]));
     var dayName = dayNames[dt.getDay()];
-    var day = parseInt(date.substring(8, 10));
+    var day = parseInt(dp[2]);
 
-    // AM/PM 분류 (입원)
+    // AM/PM 분류 (입원) + 10시전 계산
     var amPts = new Set(), pmPts = new Set(), amRx = new Set(), pmRx = new Set();
     var before10Pts = new Set(), before10Rx = new Set();
     dayMix.forEach(function(r) {
@@ -1448,38 +1449,29 @@ function renderAmpmStats(sd) {
       var rxKey = pk + '|' + r.code;
       if (r.ampm === '오전') { amPts.add(pk); amRx.add(rxKey); }
       else if (r.ampm === '오후') { pmPts.add(pk); pmRx.add(rxKey); }
-      else { amPts.add(pk); amRx.add(rxKey); } // 분류 불명은 오전에 포함
+      else { amPts.add(pk); amRx.add(rxKey); }
+      // 10시전: receiptTime < 0.4167 (엑셀 시리얼 10:00 ≈ 0.4167)
+      if (r.receiptTime > 0 && r.receiptTime < 0.4167) {
+        before10Pts.add(pk);
+        before10Rx.add(rxKey);
+      }
     });
-    // 외래 AM/PM (접수시간 기준은 외래에는 없으므로 전체를 total로)
+    // 외래: AM/PM 구분 없음, total행에만 표시
     var outPts = new Set(), outRx = new Set();
-    var outAmPts = new Set(), outAmRx = new Set(), outPmPts = new Set(), outPmRx = new Set();
     dayOut.forEach(function(r) {
       var pk = r.patient || r.regNo || '?';
-      var rxKey = pk + '|' + r.code;
-      outPts.add(pk); outRx.add(rxKey);
-      // 외래는 AM으로 기본 분류
-      outAmPts.add(pk); outAmRx.add(rxKey);
-    });
-
-    // 10시 이전: 입원MIX에서 접수시간 < 10시 (엑셀 시리얼 0.4167 ≈ 10:00)
-    dayMix.forEach(function(r) {
-      if (r.ampm === '오전') {
-        // 접수시간 필드가 있으면 사용, 없으면 오전 전체를 10시 이전으로
-        var pk = r.patient || r.regNo || '?';
-        before10Pts.add(pk);
-        before10Rx.add(pk + '|' + r.code);
-      }
+      outPts.add(pk); outRx.add(pk + '|' + r.code);
     });
 
     var allInPts = new Set([...amPts, ...pmPts]);
     var allInRx = new Set([...amRx, ...pmRx]);
 
-    // AM행
-    var amInP = amPts.size, amInR = amRx.size, amOutP = outAmPts.size, amOutR = outAmRx.size;
-    var amTotal = amInR + amOutR;
-    // PM행
-    var pmInP = pmPts.size, pmInR = pmRx.size, pmOutP = outPmPts.size, pmOutR = outPmRx.size;
-    var pmTotal = pmInR + pmOutR;
+    // AM행 (외래는 빈칸)
+    var amInP = amPts.size, amInR = amRx.size;
+    var amTotal = amInR;
+    // PM행 (외래는 빈칸)
+    var pmInP = pmPts.size, pmInR = pmRx.size;
+    var pmTotal = pmInR;
     // total행
     var totInP = allInPts.size, totInR = allInRx.size, totOutP = outPts.size, totOutR = outRx.size;
     var totAll = totInR + totOutR;
@@ -1496,13 +1488,13 @@ function renderAmpmStats(sd) {
     html += '<td rowspan="3" style="text-align:center;vertical-align:middle;">' + day + '</td>';
     html += '<td style="text-align:center;font-weight:600;color:#2563eb;">AM</td>';
     html += '<td class="num">' + (amInP||'') + '</td><td class="num">' + (amInR||'') + '</td>';
-    html += '<td class="num">' + (amOutP||'') + '</td><td class="num">' + (amOutR||'') + '</td>';
+    html += '<td class="num"></td><td class="num"></td>';
     html += '<td class="num">' + (amTotal||'') + '</td>';
     html += '<td class="num"></td><td class="num"></td></tr>';
     // PM 행
     html += '<tr><td style="text-align:center;font-weight:600;color:#dc2626;">PM</td>';
     html += '<td class="num">' + (pmInP||'') + '</td><td class="num">' + (pmInR||'') + '</td>';
-    html += '<td class="num">' + (pmOutP||'') + '</td><td class="num">' + (pmOutR||'') + '</td>';
+    html += '<td class="num"></td><td class="num"></td>';
     html += '<td class="num">' + (pmTotal||'') + '</td>';
     html += '<td class="num"></td><td class="num"></td></tr>';
     // total 행
@@ -2155,7 +2147,8 @@ function parseInpatientMix(wb) {
         doseUnit: String(r['단위'] || r['투여단위'] || '').trim(),
         totalQty: parseFloat(r['총량']) || 0,
         totalUnit: String(r['총량단위'] || '').trim(),
-        ampm: ampm
+        ampm: ampm,
+        receiptTime: receiptTime
       });
       count++;
     });

@@ -518,7 +518,7 @@ body.general-mode .text-blue { color:#16a34a; }
     <!-- 통계 뷰 토글 버튼 -->
     <div style="display:flex;gap:8px;margin-bottom:12px;" id="statsViewToggle">
       <button class="stats-toggle-btn active" onclick="toggleStatsView('dept')">진료과별 통계</button>
-      <button class="stats-toggle-btn" onclick="toggleStatsView('ampm')">오전/오후 통계</button>
+      <button class="stats-toggle-btn" onclick="toggleStatsView('ampm')">조제통계 (오전/오후)</button>
     </div>
     <!-- 진료과별 통계 섹션 -->
     <div id="statsViewDept">
@@ -527,26 +527,20 @@ body.general-mode .text-blue { color:#16a34a; }
         <button class="stats-print-btn" onclick="printStatsSection('dept')">[Print] 진료과별</button>
       </div>
       <div id="statsChemoMatrix" style="margin-bottom:12px;"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;" id="statsDetailGrid">
-        <div>
-          <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">카테고리별 (입원)</h4>
-          <div id="statsCategoryTable"></div>
-        </div>
-        <div>
-          <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">진료과별 요약</h4>
-          <div id="statsDoctorTable"></div>
-        </div>
+      <div style="margin-bottom:12px;" id="statsDetailGrid">
+        <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">진료과별 요약</h4>
+        <div id="statsDoctorTable"></div>
       </div>
       <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">약품별 사용량</h4>
       <div style="overflow-x:auto;">
         <table class="stats-bordered" id="statsDrugTable"><thead></thead><tbody></tbody></table>
       </div>
     </div>
-    <!-- 오전/오후 통계 섹션 -->
+    <!-- 조제통계 (오전/오후) 섹션 -->
     <div id="statsViewAmpm" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <h4 style="font-size:13px;font-weight:700;color:#334155;margin:0;">날짜별 오전/오후 통계</h4>
-        <button class="stats-print-btn" onclick="printStatsSection('ampm')">[Print] 오전/오후</button>
+        <h4 style="font-size:13px;font-weight:700;color:#334155;margin:0;">조제통계 (오전/오후)</h4>
+        <button class="stats-print-btn" onclick="printStatsSection('ampm')">[Print] 조제통계</button>
       </div>
       <div id="statsAmpmContent"></div>
     </div>
@@ -1284,7 +1278,6 @@ function renderStats() {
   var mix = sd.mix, out = sd.out;
   var emptyEl = document.getElementById('statsEmpty');
   var cardsEl = document.getElementById('statsSummaryCards');
-  var catEl = document.getElementById('statsCategoryTable');
   var deptEl = document.getElementById('statsDoctorTable');
   var drugTbl = document.getElementById('statsDrugTable');
   var dateLabel = document.getElementById('statsDateLabel');
@@ -1295,7 +1288,7 @@ function renderStats() {
 
   if (mix.length === 0 && out.length === 0) {
     emptyEl.classList.remove('hidden');
-    cardsEl.innerHTML = ''; catEl.innerHTML = ''; deptEl.innerHTML = '';
+    cardsEl.innerHTML = ''; deptEl.innerHTML = '';
     drugTbl.querySelector('thead').innerHTML = ''; drugTbl.querySelector('tbody').innerHTML = '';
     detailGrid.style.display = 'none'; chemoMatrixEl.innerHTML = ''; ampmEl.innerHTML = '';
     viewToggle.style.display = 'none';
@@ -1306,10 +1299,14 @@ function renderStats() {
   viewToggle.style.display = '';
   dateLabel.textContent = sd.label;
 
-  // ── 환자/처방/약품 건수 ──
+  // ── 수액 제외 필터 ──
+  var fMix = mix.filter(function(r){ return !isVehicle(r.code); });
+  var fOut = out.filter(function(r){ return !isVehicle(r.code); });
+
+  // ── 환자/처방/약품 건수 (수액 제외) ──
   var inPts={},outPts={},allPts={},inRx={},outRx={},inDrugs={},outDrugs={},allDrugs={};
-  mix.forEach(function(r){var k=r.patient||r.regNo||'?';inPts[k]=1;allPts[k]=1;inRx[k+'|'+r.code]=1;inDrugs[r.code]=1;allDrugs[r.code]=1;});
-  out.forEach(function(r){var k=r.patient||r.regNo||'?';outPts[k]=1;allPts[k]=1;outRx[k+'|'+r.code]=1;outDrugs[r.code]=1;allDrugs[r.code]=1;});
+  fMix.forEach(function(r){var k=r.patient||r.regNo||'?';inPts[k]=1;allPts[k]=1;inRx[k+'|'+r.code]=1;inDrugs[r.code]=1;allDrugs[r.code]=1;});
+  fOut.forEach(function(r){var k=r.patient||r.regNo||'?';outPts[k]=1;allPts[k]=1;outRx[k+'|'+r.code]=1;outDrugs[r.code]=1;allDrugs[r.code]=1;});
   var inP=Object.keys(inPts).length,outP=Object.keys(outPts).length,totP=Object.keys(allPts).length;
   var inR=Object.keys(inRx).length,outR=Object.keys(outRx).length;
 
@@ -1317,23 +1314,11 @@ function renderStats() {
     '<div class="stat-card" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#3b82f6;font-weight:600;">환자건수</div><div style="font-size:22px;font-weight:800;color:#1e40af;">'+totP+'</div><div style="font-size:11px;color:#64748b;">입원 '+inP+' / 외래 '+outP+'</div></div>'
     +'<div class="stat-card" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#22c55e;font-weight:600;">처방건수</div><div style="font-size:22px;font-weight:800;color:#15803d;">'+(inR+outR)+'</div><div style="font-size:11px;color:#64748b;">입원 '+inR+' / 외래 '+outR+'</div></div>'
     +'<div class="stat-card" style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#eab308;font-weight:600;">약품건수</div><div style="font-size:22px;font-weight:800;color:#a16207;">'+Object.keys(allDrugs).length+'</div><div style="font-size:11px;color:#64748b;">입원 '+Object.keys(inDrugs).length+' / 외래 '+Object.keys(outDrugs).length+'</div></div>'
-    +'<div class="stat-card" style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#ec4899;font-weight:600;">데이터 행수</div><div style="font-size:22px;font-weight:800;color:#be185d;">'+(mix.length+out.length)+'</div><div style="font-size:11px;color:#64748b;">입원 '+mix.length+' / 외래 '+out.length+'</div></div>';
+    +'<div class="stat-card" style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#ec4899;font-weight:600;">데이터 행수</div><div style="font-size:22px;font-weight:800;color:#be185d;">'+(fMix.length+fOut.length)+'</div><div style="font-size:11px;color:#64748b;">입원 '+fMix.length+' / 외래 '+fOut.length+'</div></div>';
 
-  // ── 카테고리별 (입원) ──
-  var cats = {};
-  mix.forEach(function(r){
-    if(!cats[r.category])cats[r.category]={pts:{},rx:{}};
-    cats[r.category].pts[r.patient||r.regNo||'?']=1;
-    cats[r.category].rx[(r.patient||r.regNo||'?')+'|'+r.code]=1;
-  });
-  var catHtml='<table class="stats-bordered"><thead><tr><th>구분</th><th style="text-align:right">환자</th><th style="text-align:right">처방</th></tr></thead><tbody>';
-  Object.keys(cats).forEach(function(c){catHtml+='<tr><td>'+escapeHtml(c)+'</td><td class="num">'+Object.keys(cats[c].pts).length+'</td><td class="num">'+Object.keys(cats[c].rx).length+'</td></tr>';});
-  catHtml+='</tbody></table>';
-  catEl.innerHTML = Object.keys(cats).length > 0 ? catHtml : '<span style="font-size:12px;color:#94a3b8;">카테고리 데이터 없음</span>';
-
-  // ── 진료과별 (처방의→진료과 매핑) ──
+  // ── 진료과별 (처방의→진료과 매핑, 수액 제외) ──
   var depts = {};
-  mix.concat(out).forEach(function(r){
+  fMix.concat(fOut).forEach(function(r){
     var dept = getDeptCode(r.doctor);
     if(!depts[dept])depts[dept]={pts:{},rx:{}};
     depts[dept].pts[r.patient||r.regNo||'?']=1;
@@ -1345,11 +1330,11 @@ function renderStats() {
   deptHtml+='</tbody></table>';
   deptEl.innerHTML = deptKeys.length > 0 ? deptHtml : '<span style="font-size:12px;color:#94a3b8;">진료과 데이터 없음</span>';
 
-  // ── 약품별 × 진료과 매트릭스 (처방건수) ── 약품명 사용 ──
+  // ── 약품별 × 진료과 매트릭스 (처방건수, 수액 제외) ──
   var deptOrder = ['IMR','IMH','IMN','IME','IMI','IMJ','GIC','GS','OG','UR','OS','CV','TS','NS','NR','RH','OT','PD','Hospice','기타'];
-  var drugDept = {}; // { cleanName: { dept: Set(patient|code), code: firstCode } }
+  var drugDept = {};
   var usedDepts = {};
-  mix.concat(out).forEach(function(r){
+  fMix.concat(fOut).forEach(function(r){
     var cname = cleanDrugName(r.name);
     if(!cname) return;
     var dept = getDeptCode(r.doctor);
@@ -1386,15 +1371,15 @@ function renderStats() {
     chemoMatrixEl.innerHTML = '';
   }
 
-  // ── 약품별 상세 ──
+  // ── 약품별 상세 (수액 제외) ──
   var drugMap = {};
-  mix.forEach(function(r){
+  fMix.forEach(function(r){
     var cn = cleanDrugName(r.name);
     if(!drugMap[cn])drugMap[cn]={name:cn,inQty:0,outQty:0,inPts:{},outPts:{}};
     drugMap[cn].inQty+=r.totalQty||r.dose||0;
     drugMap[cn].inPts[r.patient||r.regNo||'?']=1;
   });
-  out.forEach(function(r){
+  fOut.forEach(function(r){
     var cn = cleanDrugName(r.name);
     if(!drugMap[cn])drugMap[cn]={name:cn,inQty:0,outQty:0,inPts:{},outPts:{}};
     drugMap[cn].outQty+=r.totalQty||0;
@@ -1419,7 +1404,7 @@ function renderStats() {
   drugTbl.querySelector('thead').innerHTML=thead;
   drugTbl.querySelector('tbody').innerHTML=tbodyH||'<tr><td colspan="6" style="text-align:center;color:#94a3b8;">데이터 없음</td></tr>';
 
-  // ── 오전/오후 통계 (날짜별) ──
+  // ── 조제통계 (오전/오후) ──
   renderAmpmStats(sd);
 }
 
@@ -1430,62 +1415,113 @@ function renderAmpmStats(sd) {
   if (sd.perDate && Object.keys(sd.perDate).length > 0) {
     dates = sd.perDate;
   } else {
-    // daily mode: 현재 데이터만
     var wd = getWorkDate();
     dates[wd] = { mix: sd.mix, out: sd.out };
   }
   var sortedDates = Object.keys(dates).sort();
   if (sortedDates.length === 0) { el.innerHTML = ''; return; }
 
-  var html = '';
-  sortedDates.forEach(function(date) {
-    var dayMix = dates[date].mix || [];
-    var dayOut = dates[date].out || [];
-    // 약품별 오전/오후 집계
-    var drugAmpm = {}; // { cleanName: { am: qty, pm: qty, amPts: Set, pmPts: Set, etcQty: 0, outQty: 0, outPts: Set } }
-    dayMix.forEach(function(r) {
-      var cn = cleanDrugName(r.name);
-      if (!cn) return;
-      if (!drugAmpm[cn]) drugAmpm[cn] = { am:0, pm:0, amPts:new Set(), pmPts:new Set(), etc:0, outQty:0, outPts:new Set() };
-      var qty = r.totalQty || r.dose || 0;
-      var pk = r.patient || r.regNo || '?';
-      if (r.ampm === '오전') { drugAmpm[cn].am += qty; drugAmpm[cn].amPts.add(pk); }
-      else if (r.ampm === '오후') { drugAmpm[cn].pm += qty; drugAmpm[cn].pmPts.add(pk); }
-      else { drugAmpm[cn].etc += qty; }
-    });
-    dayOut.forEach(function(r) {
-      var cn = cleanDrugName(r.name);
-      if (!cn) return;
-      if (!drugAmpm[cn]) drugAmpm[cn] = { am:0, pm:0, amPts:new Set(), pmPts:new Set(), etc:0, outQty:0, outPts:new Set() };
-      drugAmpm[cn].outQty += r.totalQty || 0;
-      drugAmpm[cn].outPts.add(r.patient || r.regNo || '?');
-    });
-    var keys = Object.keys(drugAmpm).sort();
-    if (keys.length === 0) return;
+  var dayNames = ['일','월','화','수','목','금','토'];
+  // 엑셀 양식: 요일 | 날짜 | AM/PM/total | 입원환자수 | 입원조제건수 | 외래환자수 | 외래조제건수 | Total조제건수 | 10시전 접수환자수 | 건수
+  var html = '<div style="overflow-x:auto;"><table class="stats-bordered">';
+  html += '<thead><tr><th style="width:30px;">요일</th><th style="width:50px;">날짜</th><th style="width:45px;"></th>';
+  html += '<th style="text-align:right;">입원 환자수</th><th style="text-align:right;">입원 조제건수</th>';
+  html += '<th style="text-align:right;">외래 환자수</th><th style="text-align:right;">외래 조제건수</th>';
+  html += '<th style="text-align:right;">Total 조제건수</th>';
+  html += '<th style="text-align:right;">10시전 환자수</th><th style="text-align:right;">10시전 건수</th>';
+  html += '</tr></thead><tbody>';
 
-    // 날짜 표시 (요일 포함)
-    var dayNames = ['일','월','화','수','목','금','토'];
-    var dt = new Date(date); var dayName = dayNames[dt.getDay()];
-    html += '<div style="margin-bottom:16px;">';
-    html += '<h4 style="font-size:13px;font-weight:700;color:#1e40af;margin:0 0 6px;padding:4px 8px;background:#eff6ff;border-radius:4px;">' + date + ' (' + dayName + ')</h4>';
-    html += '<table class="stats-bordered"><thead><tr>';
-    html += '<th>약품명</th><th style="text-align:right">오전 환자</th><th style="text-align:right">오전 사용량</th><th style="text-align:right">오후 환자</th><th style="text-align:right">오후 사용량</th><th style="text-align:right">외래 환자</th><th style="text-align:right">외래 사용량</th><th style="text-align:right">합계</th>';
-    html += '</tr></thead><tbody>';
-    var totalAm=0, totalPm=0, totalOut=0, totalAll=0;
-    keys.forEach(function(cn) {
-      var d = drugAmpm[cn];
-      var rowTotal = Math.round((d.am + d.pm + d.etc + d.outQty)*10)/10;
-      totalAm += d.am; totalPm += d.pm; totalOut += d.outQty; totalAll += d.am + d.pm + d.etc + d.outQty;
-      html += '<tr><td style="white-space:nowrap;">' + escapeHtml(cn) + '</td>';
-      html += '<td class="num">' + (d.amPts.size||'') + '</td><td class="num">' + (d.am ? Math.round(d.am*10)/10 : '') + '</td>';
-      html += '<td class="num">' + (d.pmPts.size||'') + '</td><td class="num">' + (d.pm ? Math.round(d.pm*10)/10 : '') + '</td>';
-      html += '<td class="num">' + (d.outPts.size||'') + '</td><td class="num">' + (d.outQty ? Math.round(d.outQty*10)/10 : '') + '</td>';
-      html += '<td class="num" style="font-weight:700;">' + rowTotal + '</td></tr>';
+  var grandInPts=0, grandInRx=0, grandOutPts=0, grandOutRx=0, grandTotal=0, grandBefore10Pts=0, grandBefore10Rx=0;
+
+  sortedDates.forEach(function(date) {
+    var dayMix = (dates[date].mix || []).filter(function(r){ return !isVehicle(r.code); });
+    var dayOut = (dates[date].out || []).filter(function(r){ return !isVehicle(r.code); });
+    var dt = new Date(date);
+    var dayName = dayNames[dt.getDay()];
+    var day = parseInt(date.substring(8, 10));
+
+    // AM/PM 분류 (입원)
+    var amPts = new Set(), pmPts = new Set(), amRx = new Set(), pmRx = new Set();
+    var before10Pts = new Set(), before10Rx = new Set();
+    dayMix.forEach(function(r) {
+      var pk = r.patient || r.regNo || '?';
+      var rxKey = pk + '|' + r.code;
+      if (r.ampm === '오전') { amPts.add(pk); amRx.add(rxKey); }
+      else if (r.ampm === '오후') { pmPts.add(pk); pmRx.add(rxKey); }
+      else { amPts.add(pk); amRx.add(rxKey); } // 분류 불명은 오전에 포함
     });
-    html += '<tr class="total-row"><td>합계</td><td></td><td class="num">' + Math.round(totalAm*10)/10 + '</td><td></td><td class="num">' + Math.round(totalPm*10)/10 + '</td><td></td><td class="num">' + Math.round(totalOut*10)/10 + '</td><td class="num">' + Math.round(totalAll*10)/10 + '</td></tr>';
-    html += '</tbody></table></div>';
+    // 외래 AM/PM (접수시간 기준은 외래에는 없으므로 전체를 total로)
+    var outPts = new Set(), outRx = new Set();
+    var outAmPts = new Set(), outAmRx = new Set(), outPmPts = new Set(), outPmRx = new Set();
+    dayOut.forEach(function(r) {
+      var pk = r.patient || r.regNo || '?';
+      var rxKey = pk + '|' + r.code;
+      outPts.add(pk); outRx.add(rxKey);
+      // 외래는 AM으로 기본 분류
+      outAmPts.add(pk); outAmRx.add(rxKey);
+    });
+
+    // 10시 이전: 입원MIX에서 접수시간 < 10시 (엑셀 시리얼 0.4167 ≈ 10:00)
+    dayMix.forEach(function(r) {
+      if (r.ampm === '오전') {
+        // 접수시간 필드가 있으면 사용, 없으면 오전 전체를 10시 이전으로
+        var pk = r.patient || r.regNo || '?';
+        before10Pts.add(pk);
+        before10Rx.add(pk + '|' + r.code);
+      }
+    });
+
+    var allInPts = new Set([...amPts, ...pmPts]);
+    var allInRx = new Set([...amRx, ...pmRx]);
+
+    // AM행
+    var amInP = amPts.size, amInR = amRx.size, amOutP = outAmPts.size, amOutR = outAmRx.size;
+    var amTotal = amInR + amOutR;
+    // PM행
+    var pmInP = pmPts.size, pmInR = pmRx.size, pmOutP = outPmPts.size, pmOutR = outPmRx.size;
+    var pmTotal = pmInR + pmOutR;
+    // total행
+    var totInP = allInPts.size, totInR = allInRx.size, totOutP = outPts.size, totOutR = outRx.size;
+    var totAll = totInR + totOutR;
+    var b10P = before10Pts.size, b10R = before10Rx.size;
+
+    grandInPts += totInP; grandInRx += totInR; grandOutPts += totOutP; grandOutRx += totOutR;
+    grandTotal += totAll; grandBefore10Pts += b10P; grandBefore10Rx += b10R;
+
+    var weekend = (dt.getDay() === 0 || dt.getDay() === 6);
+    var dayStyle = weekend ? 'color:#dc2626;' : '';
+
+    // AM 행 (요일+날짜 rowspan=3)
+    html += '<tr><td rowspan="3" style="text-align:center;font-weight:700;vertical-align:middle;' + dayStyle + '">' + dayName + '</td>';
+    html += '<td rowspan="3" style="text-align:center;vertical-align:middle;">' + day + '</td>';
+    html += '<td style="text-align:center;font-weight:600;color:#2563eb;">AM</td>';
+    html += '<td class="num">' + (amInP||'') + '</td><td class="num">' + (amInR||'') + '</td>';
+    html += '<td class="num">' + (amOutP||'') + '</td><td class="num">' + (amOutR||'') + '</td>';
+    html += '<td class="num">' + (amTotal||'') + '</td>';
+    html += '<td class="num"></td><td class="num"></td></tr>';
+    // PM 행
+    html += '<tr><td style="text-align:center;font-weight:600;color:#dc2626;">PM</td>';
+    html += '<td class="num">' + (pmInP||'') + '</td><td class="num">' + (pmInR||'') + '</td>';
+    html += '<td class="num">' + (pmOutP||'') + '</td><td class="num">' + (pmOutR||'') + '</td>';
+    html += '<td class="num">' + (pmTotal||'') + '</td>';
+    html += '<td class="num"></td><td class="num"></td></tr>';
+    // total 행
+    html += '<tr style="background:#f8fafc;font-weight:600;"><td style="text-align:center;">total</td>';
+    html += '<td class="num">' + (totInP||'') + '</td><td class="num">' + (totInR||'') + '</td>';
+    html += '<td class="num">' + (totOutP||'') + '</td><td class="num">' + (totOutR||'') + '</td>';
+    html += '<td class="num" style="font-weight:700;">' + (totAll||'') + '</td>';
+    html += '<td class="num">' + (b10P||'') + '</td><td class="num">' + (b10R||'') + '</td></tr>';
   });
-  el.innerHTML = html || '<span style="font-size:12px;color:#94a3b8;">오전/오후 데이터 없음</span>';
+
+  // 월 합계
+  html += '<tr class="total-row"><td colspan="3" style="text-align:center;">합계</td>';
+  html += '<td class="num">' + grandInPts + '</td><td class="num">' + grandInRx + '</td>';
+  html += '<td class="num">' + grandOutPts + '</td><td class="num">' + grandOutRx + '</td>';
+  html += '<td class="num">' + grandTotal + '</td>';
+  html += '<td class="num">' + grandBefore10Pts + '</td><td class="num">' + grandBefore10Rx + '</td></tr>';
+
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
 }
 
 // 연속 업로드 시 D1 요청 debounce (300ms 내 중복 요청 병합)

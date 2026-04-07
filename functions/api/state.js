@@ -11,6 +11,20 @@ export async function onRequestGet(context) {
     return Response.json({ error: 'type 파라미터 필요 (chemo|general)' }, { status: 400 });
   }
 
+  // 장기 통계 범위 조회
+  const statsFrom = url.searchParams.get('stats_from');
+  const statsTo = url.searchParams.get('stats_to');
+  if (statsFrom && statsTo) {
+    try {
+      const rows = await env.DB.prepare(
+        'SELECT date, stats FROM daily_stats WHERE data_type = ? AND date >= ? AND date <= ? ORDER BY date'
+      ).bind(type, statsFrom, statsTo).all();
+      return Response.json({ stats: rows.results || [] });
+    } catch (e) {
+      return Response.json({ error: 'stats 조회 실패: ' + e.message }, { status: 500 });
+    }
+  }
+
   const row = await env.DB.prepare(
     'SELECT data, daily_data, updated_at FROM app_state WHERE id = ?'
   ).bind(type).first();
@@ -77,8 +91,8 @@ export async function onRequestPut(context) {
             'INSERT OR REPLACE INTO inventory_history (data_type, date, summary) VALUES (?, ?, ?)'
           ).bind(type, dateKey, JSON.stringify(summary)).run();
 
-          // 365일 초과 데이터 정리
-          const cutoff = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+          // 10년 초과 데이터 정리 (재고량 히스토리)
+          const cutoff = new Date(Date.now() - 3650 * 86400000).toISOString().slice(0, 10);
           await env.DB.prepare(
             'DELETE FROM inventory_history WHERE data_type = ? AND date < ?'
           ).bind(type, cutoff).run();
@@ -106,6 +120,28 @@ export async function onRequestPut(context) {
       }
     } catch (statsErr) {
       console.warn('chemo_daily_stats 저장 실패:', statsErr);
+    }
+
+    // 통합 일별 AM/PM 통계 배치 저장 (365일 보관)
+    try {
+      if (body.daily_stats_batch) {
+        const batch = JSON.parse(body.daily_stats_batch);
+        if (Array.isArray(batch) && batch.length > 0) {
+          for (const item of batch) {
+            if (!item || !item.date || !item.stats) continue;
+            await env.DB.prepare(
+              'INSERT OR REPLACE INTO daily_stats (data_type, date, stats, updated_at) VALUES (?, ?, ?, ?)'
+            ).bind(type, item.date, JSON.stringify(item.stats), now).run();
+          }
+          // 사실상 영구 보관 (100년 초과만 정리)
+          const cutoff = new Date(Date.now() - 36500 * 86400000).toISOString().slice(0, 10);
+          await env.DB.prepare(
+            'DELETE FROM daily_stats WHERE data_type = ? AND date < ?'
+          ).bind(type, cutoff).run();
+        }
+      }
+    } catch (batchErr) {
+      console.warn('daily_stats 배치 저장 실패:', batchErr);
     }
 
     return Response.json({ success: true, updated_at: now });

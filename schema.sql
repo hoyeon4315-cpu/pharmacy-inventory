@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS chemo_daily_stats (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 통합 일별 AM/PM 통계 (항암제/일반약 공용, 장기 보관)
+-- stats JSON 필드: { inPts, inRx, outPts, outRx, amPts, amRx, pmPts, pmRx, b10P, b10R }
+CREATE TABLE IF NOT EXISTS daily_stats (
+  data_type TEXT NOT NULL,
+  date TEXT NOT NULL,
+  stats TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (data_type, date)
+);
+
 -- 초기 데이터
 INSERT OR IGNORE INTO app_state (id, data, daily_data, updated_at)
 VALUES ('chemo', '{}', '{}', datetime('now'));

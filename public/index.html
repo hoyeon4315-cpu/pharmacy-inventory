@@ -1450,14 +1450,23 @@ function renderStats() {
   });
   var etcUniq = [...new Set(etcRows)].sort();
 
+  // 기타 목록을 안전하게 전달: window 객체에 저장 후 클릭 시 참조
+  window._etcDoctorList = etcUniq;
   deptKeys.forEach(function(d){
-    var onclick = d === '기타' && etcUniq.length > 0
-      ? ' style="cursor:pointer;color:#2563eb;text-decoration:underline;" onclick="alert(\'[기타 처방의 / 진료과]\\n\\n' + etcUniq.map(function(s){return s.replace(/'/g,"\\'");}).join('\\n') + '\')"'
+    var attr = d === '기타' && etcUniq.length > 0
+      ? ' style="cursor:pointer;color:#2563eb;text-decoration:underline;" data-show-etc="1"'
       : '';
-    deptHtml+='<tr><td'+onclick+'>'+escapeHtml(d)+(d==='기타'&&etcUniq.length>0?' [?]':'')+' </td><td class="num">'+Object.keys(depts[d].pts).length+'</td><td class="num">'+Object.keys(depts[d].rx).length+'</td></tr>';
+    deptHtml+='<tr><td'+attr+'>'+escapeHtml(d)+(d==='기타'&&etcUniq.length>0?' [?]':'')+'</td><td class="num">'+Object.keys(depts[d].pts).length+'</td><td class="num">'+Object.keys(depts[d].rx).length+'</td></tr>';
   });
   deptHtml+='</tbody></table>';
   deptEl.innerHTML = deptKeys.length > 0 ? deptHtml : '<span style="font-size:12px;color:#94a3b8;">진료과 데이터 없음</span>';
+  // "기타" 행 클릭 핸들러 — 인라인 onclick 대신 위임
+  var etcCell = deptEl.querySelector('[data-show-etc="1"]');
+  if (etcCell) {
+    etcCell.addEventListener('click', function(){
+      alert('[기타 처방의 / 진료과]\n\n' + (window._etcDoctorList || []).join('\n'));
+    });
+  }
 
   // ── 약품별 × 진료과 매트릭스 (처방건수, 수액 제외) ──
   var deptOrder = ['IMR','IMH','IMN','IME','IMI','IMJ','GIC','GS','OG','UR','OS','CV','TS','NS','NR','RH','OT','PD','HOSPICE','기타'];
@@ -1913,6 +1922,8 @@ function resetAllState() {
   state.inventoryFileType = '';
   state.forecastUsage = { from:'', to:'', items:[] };
   state.surplusFixed = {};
+  state.doctorDeptMap = null;
+  state.customDepts = [];
   // 2) 뷰 / 정렬
   currentViewDate = '';
   sortStates = {};

@@ -123,15 +123,23 @@ export async function onRequestPut(context) {
     }
 
     // 통합 일별 AM/PM 통계 배치 저장 (365일 보관)
+    let batchWarning = null;
+    let batchSaved = 0, batchFailed = 0;
     try {
       if (body.daily_stats_batch) {
         const batch = JSON.parse(body.daily_stats_batch);
         if (Array.isArray(batch) && batch.length > 0) {
           for (const item of batch) {
-            if (!item || !item.date || !item.stats) continue;
-            await env.DB.prepare(
-              'INSERT OR REPLACE INTO daily_stats (data_type, date, stats, updated_at) VALUES (?, ?, ?, ?)'
-            ).bind(type, item.date, JSON.stringify(item.stats), now).run();
+            if (!item || !item.date || !item.stats) { batchFailed++; continue; }
+            try {
+              await env.DB.prepare(
+                'INSERT OR REPLACE INTO daily_stats (data_type, date, stats, updated_at) VALUES (?, ?, ?, ?)'
+              ).bind(type, item.date, JSON.stringify(item.stats), now).run();
+              batchSaved++;
+            } catch (rowErr) {
+              batchFailed++;
+              console.warn('daily_stats row 실패:', item.date, rowErr);
+            }
           }
           // 사실상 영구 보관 (100년 초과만 정리)
           const cutoff = new Date(Date.now() - 36500 * 86400000).toISOString().slice(0, 10);
@@ -142,9 +150,15 @@ export async function onRequestPut(context) {
       }
     } catch (batchErr) {
       console.warn('daily_stats 배치 저장 실패:', batchErr);
+      batchWarning = batchErr.message || String(batchErr);
     }
 
-    return Response.json({ success: true, updated_at: now });
+    return Response.json({
+      success: true,
+      updated_at: now,
+      ...(batchSaved + batchFailed > 0 && { batch: { saved: batchSaved, failed: batchFailed } }),
+      ...(batchWarning && { batch_warning: batchWarning })
+    });
   } catch (e) {
     return Response.json({ error: '저장 실패: ' + e.message }, { status: 500 });
   }

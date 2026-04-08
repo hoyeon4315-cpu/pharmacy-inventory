@@ -3820,7 +3820,7 @@ function renderZeroDrugs() {
   groups.forEach(g => {
     // 환자 전체에서 가장 빠른 다음 투여일
     const earliestNext = g.drugs.reduce((m,d) => { const nd = getEffectiveNextDate(d); return nd < m ? nd : m; }, '9999');
-    const diff0 = Math.floor((new Date(earliestNext) - now) / 86400000);
+    const diff0 = Math.floor((parseLocalYmd(earliestNext) - now) / 86400000);
     let groupCls = '';
     if (diff0 <= 0) groupCls = 'border-color:#fecaca;background:#fef2f2;';
     else if (diff0 <= 7) groupCls = 'border-color:#fde68a;background:#fffbeb;';
@@ -3845,7 +3845,8 @@ function renderZeroDrugs() {
     html += `<span style="font-weight:700;font-size:13px;">${g.patient}${memoIcon}</span>`;
     html += g.regNo ? ` <span style="color:#64748b;font-size:11px;">(${g.regNo})</span> <span style="cursor:pointer;font-size:10px;color:#3b82f6;" onclick="event.stopPropagation();copyRegNo(\'${g.regNo}\')" title="등록번호 복사">[복사]</span>` : '';
     let diffBadge = '';
-    if (diff0 <= 0) diffBadge = '<span class="badge badge-red">오늘/지남</span>';
+    if (diff0 < 0) diffBadge = `<span class="badge badge-red">${-diff0}일 지남</span>`;
+    else if (diff0 === 0) diffBadge = '<span class="badge badge-red">오늘</span>';
     else if (diff0 <= 7) diffBadge = `<span class="badge badge-yellow">${diff0}일 후</span>`;
     else diffBadge = `<span class="badge badge-green">${diff0}일 후</span>`;
     html += ` ${diffBadge}`;

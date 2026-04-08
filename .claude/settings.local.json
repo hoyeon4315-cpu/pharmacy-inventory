@@ -154,7 +154,9 @@
       "Bash(node -e \"const XLSX=require\\(''xlsx''\\); const p=require\\(''path''\\).join\\(''C:'',''Users'',''duih'',''Desktop'',''이호연'',''Sheet1.xlsx''\\); console.log\\(''path:'',p\\); const wb=XLSX.readFile\\(p\\); console.log\\(''sheets:'',wb.SheetNames\\); wb.SheetNames.forEach\\(sn=>{const d=XLSX.utils.sheet_to_json\\(wb.Sheets[sn],{header:1,defval:''''}\\); console.log\\(''\\\\n==='',sn,''rows:'',d.length,''===''\\); d.slice\\(0,8\\).forEach\\(\\(r,i\\)=>console.log\\(i,JSON.stringify\\(r.slice\\(0,15\\)\\)\\)\\); if\\(d.length>8\\) console.log\\(''...'',d.length-8,''more rows''\\);}\\)\")",
       "Bash(node -e \"const XLSX=require\\(''xlsx''\\); const p=require\\(''path''\\).join\\(''C:'',''Users'',''duih'',''Desktop'',''이호연'',''Sheet1.xlsx''\\); const wb=XLSX.readFile\\(p\\); const d=XLSX.utils.sheet_to_json\\(wb.Sheets[wb.SheetNames[0]],{header:1,defval:''''}\\); console.log\\(''헤더행\\(전체\\):'', JSON.stringify\\(d[2]\\)\\); console.log\\(''데이터행3:'', JSON.stringify\\(d[3]\\)\\); console.log\\(''데이터행5:'', JSON.stringify\\(d[5]\\)\\); console.log\\(''마지막행:'', JSON.stringify\\(d[d.length-1]\\)\\); console.log\\(''총행수:'', d.length\\);\")",
       "Bash(git config:*)",
-      "Bash(gh auth:*)"
+      "Bash(gh auth:*)",
+      "Bash(source .env)",
+      "Bash(find /Users/love/pharmacy-inventory -type f -name *coderabbit* -o -name *review*)"
     ]
   }
 }

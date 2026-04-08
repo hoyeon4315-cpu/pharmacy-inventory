@@ -600,11 +600,14 @@ body.general-mode .text-blue { color:#16a34a; }
           <th class="sortable" data-table="forecast" data-key="periodTotal" style="text-align:right">기간총사용량</th>
           <th class="sortable" data-table="forecast" data-key="dailyAvg" style="text-align:right">하루평균</th>
           <th class="sortable" data-table="forecast" data-key="monthlyAvg" style="text-align:right">월평균</th>
+          <th class="sortable" data-table="forecast" data-key="systemStock" style="text-align:right;background:#f1f5f9;">전산재고</th>
           <th class="sortable" data-table="forecast" data-key="currentStock" style="text-align:right;background:#fefce8;font-weight:700;">실재고</th>
           <th class="sortable" data-table="forecast" data-key="queryNeed" style="text-align:right">조회기간필요</th>
-          <th class="sortable" data-table="forecast" data-key="diff" style="text-align:right">과부족</th>
+          <th class="sortable" data-table="forecast" data-key="diffSystem" style="text-align:right">과부족(전산)</th>
+          <th class="sortable" data-table="forecast" data-key="diff" style="text-align:right">과부족(실재고)</th>
           <th>상태</th>
           <th style="text-align:right">발주수량</th>
+          <th style="width:40px;"></th>
         </tr></thead>
         <tbody id="forecastBody"></tbody>
       </table>
@@ -2869,27 +2872,32 @@ function getDemandForecast() {
 
   // 실재고 매핑 + 물품코드(barcode) 매핑
   const realInvMap = {};
+  const sysInvMap = {};
   const barcodeMap = {};
-  getRealInventory().forEach(r => { realInvMap[r.code] = r.realQty; barcodeMap[r.code] = r.barcode || ''; });
+  getRealInventory().forEach(r => { realInvMap[r.code] = r.realQty; sysInvMap[r.code] = r.systemQty; barcodeMap[r.code] = r.barcode || ''; });
 
   // 현재 타입의 마스터만 필터링
   const masterCodes = getCurrentMasterCodes();
 
+  const hiddenSet = new Set(state.hiddenDrugs || []);
   const results = [];
   fu.items.forEach(item => {
     if (masterCodes.size > 0 && !masterCodes.has(item.code)) return;
+    if (hiddenSet.has(item.code)) return;
     const dailyAvg = item.total / periodDays;
     const monthlyAvg = dailyAvg * 30;
     const currentStock = realInvMap[item.code] || 0;
+    const systemStock = sysInvMap[item.code] || 0;
     const queryNeed = queryDays > 0 ? Math.ceil(dailyAvg * queryDays) : 0;
     const diff = queryDays > 0 ? currentStock - queryNeed : currentStock - Math.ceil(monthlyAvg);
+    const diffSystem = queryDays > 0 ? systemStock - queryNeed : systemStock - Math.ceil(monthlyAvg);
 
     results.push({
       code: item.code, barcode: barcodeMap[item.code] || item.code, name: item.name,
       periodTotal: item.total,
       dailyAvg: parseFloat(dailyAvg.toFixed(1)),
       monthlyAvg: Math.round(monthlyAvg),
-      currentStock, queryNeed, diff,
+      systemStock, currentStock, queryNeed, diff, diffSystem,
       status: diff < 0 ? 'shortage' : diff <= 2 ? 'tight' : 'ok'
     });
   });
@@ -3385,7 +3393,7 @@ function renderForecast() {
   const fu = state.forecastUsage;
 
   if (forecast.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="padding:20px;color:#94a3b8;">대시보드에서 수요예측용 사용량 기간을 설정하고 파일을 업로드하세요.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="text-center" style="padding:20px;color:#94a3b8;">대시보드에서 수요예측용 사용량 기간을 설정하고 파일을 업로드하세요.</td></tr>';
     if (infoEl) infoEl.textContent = '';
     return;
   }
@@ -3406,16 +3414,20 @@ function renderForecast() {
   forecast = applySortToArray(forecast, 'forecast');
   tbody.innerHTML = forecast.map(f => {
     const cls = f.status === 'shortage' ? 'text-red font-bold' : f.status === 'tight' ? 'text-blue' : '';
+    const clsSys = f.diffSystem < 0 ? 'text-red font-bold' : f.diffSystem <= 2 ? 'text-blue' : '';
     return `<tr>
       <td>${f.code}</td><td>${f.name}</td>
       <td class="num">${f.periodTotal}</td>
       <td class="num">${f.dailyAvg}</td>
       <td class="num">${f.monthlyAvg}</td>
+      <td class="num">${f.systemStock}</td>
       <td class="num stock-highlight">${f.currentStock}</td>
       <td class="num">${f.queryNeed || '-'}</td>
+      <td class="num ${clsSys}">${f.diffSystem > 0 ? '+' : ''}${f.diffSystem}</td>
       <td class="num ${cls}">${f.diff > 0 ? '+' : ''}${f.diff}</td>
       <td>${f.status === 'shortage' ? '<span class="badge badge-red">부족</span>' : f.status === 'tight' ? '<span class="badge badge-yellow">주의</span>' : '<span class="badge badge-green">정상</span>'}</td>
       <td><input type="number" class="order-input" data-code="${f.code}" data-barcode="${f.barcode}" min="0" value=""></td>
+      <td class="text-center"><button class="btn btn-secondary btn-sm" onclick="hideDrug('${f.code}');renderForecast();" title="숨기기" style="padding:2px 6px;font-size:11px;">숨김</button></td>
     </tr>`;
   }).join('');
 }
@@ -4672,8 +4684,8 @@ function exportForecast() {
   const ws = XLSX.utils.json_to_sheet(forecast.map(f => ({
     '약품코드': f.code, '약품명': f.name,
     '기간총사용량': f.periodTotal, '하루평균': f.dailyAvg, '월평균': f.monthlyAvg,
-    '실재고': f.currentStock, '조회기간필요': f.queryNeed || '',
-    '과부족': f.diff,
+    '전산재고': f.systemStock, '실재고': f.currentStock, '조회기간필요': f.queryNeed || '',
+    '과부족(전산)': f.diffSystem, '과부족(실재고)': f.diff,
     '상태': f.status === 'shortage' ? '부족' : f.status === 'tight' ? '주의' : '정상'
   })));
   const wb = XLSX.utils.book_new();

@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "inventory",
-      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
-      "runtimeArgs": ["C:\\Users\\duih\\serve.js"],
+      "runtimeExecutable": "/usr/bin/python3",
+      "runtimeArgs": ["-m", "http.server", "3457", "--directory", "public"],
       "port": 3457
     }
   ]

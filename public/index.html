@@ -3468,37 +3468,48 @@ function expandZeroDrugDates(z) {
   return Array.from(dates).sort();
 }
 
+// 제로관리약 스키마 정리 마이그레이션 (idempotent, _zv2 플래그로 1회만 실행)
+// 목표:
+//  - nextDate = 현재 주기 D1, lastDate = 이전 주기 D1
+//  - donedays = 현재 주기에서 실제로 완료된 Day 번호만 유지
+//  - 직전 잘못된 마이그레이션으로 오염된 donedays 는 전부 초기화
+//    (사용자는 이전에 확정된 Day 를 카드/달력에서 다시 체크할 수 있음)
+//  - 자동 완료(auto-done) 로직 전면 제거 → 지나간 미투약 Day 는 알람에 남음
 function migrateZeroDrugDonedays() {
   if (!state.zeroDrugs || !state.zeroDrugs.length) return;
-  const todayStr = today();
   let changed = false;
   function ymd(d) { return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  const todayStr = today();
+
   state.zeroDrugs.forEach(z => {
-    if (!z.nextDate) return;
+    if (z._zv2) return; // 이미 마이그레이션됨
+    if (!z.nextDate && !z.lastDate) { z._zv2 = true; changed = true; return; }
+
     const dayList = getDayList(z);
     const maxDay = dayList[dayList.length - 1] || 1;
     const cycleDays = (z.cycleWeeks || 3) * 7;
-    // 1) lastDate 주기가 아직 진행 중이면 한 사이클 앞으로 당김
+
+    // 오염 가능성이 있는 donedays 초기화
+    z.donedays = [];
+
+    // 현재 주기 결정: lastDate 주기가 아직 진행 중이면 그것을 현재 주기로 승격
+    let cycleStart = z.nextDate || z.lastDate;
     if (z.lastDate) {
-      const lastEnd = parseLocalYmd(z.lastDate); lastEnd.setDate(lastEnd.getDate() + (maxDay - 1));
-      if (todayStr <= ymd(lastEnd) && z.lastDate <= todayStr) {
-        z.nextDate = z.lastDate;
-        const prev = parseLocalYmd(z.lastDate); prev.setDate(prev.getDate() - cycleDays);
-        z.lastDate = ymd(prev);
-        z.donedays = z.donedays || [];
-        changed = true;
+      const lastEnd = parseLocalYmd(z.lastDate);
+      lastEnd.setDate(lastEnd.getDate() + (maxDay - 1));
+      if (z.lastDate <= todayStr && todayStr <= ymd(lastEnd)) {
+        cycleStart = z.lastDate;
       }
     }
-    // 2) nextDate 주기에서 오늘 이전 Day는 자동완료
-    const done = z.donedays || [];
-    dayList.forEach(dn => {
-      if (done.includes(dn)) return;
-      const dt = parseLocalYmd(z.nextDate); dt.setDate(dt.getDate() + (dn - 1));
-      if (ymd(dt) < todayStr) { done.push(dn); changed = true; }
-    });
-    done.sort((a,b)=>a-b);
-    z.donedays = done;
+
+    z.nextDate = cycleStart;
+    const prev = parseLocalYmd(cycleStart); prev.setDate(prev.getDate() - cycleDays);
+    z.lastDate = ymd(prev);
+    z.pastUndone = [];
+    z._zv2 = true;
+    changed = true;
   });
+
   if (changed) saveState();
 }
 
@@ -3607,7 +3618,9 @@ function addZeroDrug() {
     dayType, dayEnd, dayPick,
     lastDate: actualLast,
     nextDate: lastDate,
-    donedays
+    donedays,
+    pastUndone: [],
+    _zv2: true
   });
   saveState();
   renderZeroDrugs();
@@ -3773,6 +3786,8 @@ function saveEditDrug(id) {
     const dStr = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
     if (dStr <= todayStr) z.donedays.push(dn);
   });
+  z.pastUndone = [];
+  z._zv2 = true;
   saveState();
   renderZeroDrugs();
   toast(z.drugName + ' 수정 완료!', 'success');

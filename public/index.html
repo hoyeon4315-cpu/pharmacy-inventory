@@ -1100,6 +1100,8 @@ async function loadFromD1() {
 
     // 제로관리약 마이그레이션: 진행 중 주기의 지난 Day 자동 완료
     try { migrateZeroDrugDonedays(); } catch(e) { console.warn('zero migration:', e); }
+    // 주기 종료일이 지난 완료 cycle 들을 자동으로 다음 주기로 이동
+    try { if (autoAdvanceAllCycles()) saveState(); } catch(e) { console.warn('zero auto-advance:', e); }
 
     // 반대편 마스터도 로드 (뉴스 원내/원외 매칭용)
     await loadOtherMaster();
@@ -3674,6 +3676,38 @@ function getDayList(z) {
   return [1];
 }
 
+// 주기 자동 이동: 모든 Day 완료 AND 오늘 > 이번 주기의 마지막 투여일이면 다음 주기로
+// 같은 날 안에서는 이동하지 않음 → 오늘 체크한 약이 달력에서 사라지지 않음
+function autoAdvanceCycle(z) {
+  if (!z || !z.nextDate) return false;
+  const dayList = getDayList(z);
+  if (!dayList.length) return false;
+  const done = z.donedays || [];
+  const allDone = dayList.every(d => done.includes(d));
+  if (!allDone) return false;
+  const maxDay = Math.max.apply(null, dayList);
+  const todayStr = today();
+  const last = parseLocalYmd(z.nextDate); last.setDate(last.getDate() + (maxDay - 1));
+  const lastStr = last.getFullYear()+'-'+String(last.getMonth()+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');
+  if (todayStr <= lastStr) return false; // 아직 이번 주기 마지막 날 안 지남
+  z.lastDate = z.nextDate;
+  const nx = parseLocalYmd(z.nextDate); nx.setDate(nx.getDate() + (z.cycleWeeks || 3) * 7);
+  z.nextDate = nx.getFullYear()+'-'+String(nx.getMonth()+1).padStart(2,'0')+'-'+String(nx.getDate()).padStart(2,'0');
+  z.donedays = [];
+  return true;
+}
+
+function autoAdvanceAllCycles() {
+  if (!state.zeroDrugs) return false;
+  let changed = false;
+  state.zeroDrugs.forEach(z => {
+    // 한 번에 여러 주기가 지났을 수도 있으므로 반복 (최대 60회)
+    let iter = 0;
+    while (iter++ < 60 && autoAdvanceCycle(z)) changed = true;
+  });
+  return changed;
+}
+
 // 특정 Day 투여 체크
 function checkInDay(id, dayNum) {
   const z = state.zeroDrugs.find(d => d.id === id);
@@ -3687,16 +3721,12 @@ function checkInDay(id, dayNum) {
   const allDone = allDays.every(d => z.donedays.includes(d));
 
   if (allDone) {
-    // 모든 Day 완료 → 다음 주기로 이동
-    z.lastDate = z.nextDate;
-    const next = new Date(z.nextDate);
-    next.setDate(next.getDate() + z.cycleWeeks * 7);
-    z.nextDate = next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0')+'-'+String(next.getDate()).padStart(2,'0');
-    z.donedays = []; // 리셋
-    toast(z.patient + ' - ' + z.drugName + ' 전체 투여 완료! 다음 주기: ' + z.nextDate, 'success');
+    toast(z.patient + ' - ' + z.drugName + ' 전체 Day 완료! (주기 종료일 이후 자동 이동)', 'success');
   } else {
     toast(z.patient + ' - ' + z.drugName + ' D' + dayNum + ' 투여 완료! (잔여: ' + (allDays.length - z.donedays.length) + '일)', 'info');
   }
+  // 주기 종료일 이후면 바로 다음 주기로 이동
+  autoAdvanceCycle(z);
   saveState();
   renderZeroDrugs();
   renderDashboard();
@@ -5209,18 +5239,8 @@ function calToggleDose(patient, drugName, dayNum, isDone, isPast, pastCycleDate)
     } else {
       if (!z.donedays.includes(dayNum)) z.donedays.push(dayNum);
       toast(patient + ' D' + dayNum + ' 투여 완료!', 'success');
-
-      // 모든 Day 완료 시 → 다음 주기로 자동 이동
-      const allDone = dayList.every(d => z.donedays.includes(d));
-      if (allDone) {
-        const base = new Date(z.nextDate);
-        z.lastDate = z.nextDate;
-        const nextCycle = new Date(base);
-        nextCycle.setDate(nextCycle.getDate() + (z.cycleWeeks || 3) * 7);
-        z.nextDate = nextCycle.getFullYear() + '-' + String(nextCycle.getMonth()+1).padStart(2,'0') + '-' + String(nextCycle.getDate()).padStart(2,'0');
-        z.donedays = [];
-        toast(patient + ' 모든 Day 완료! 다음 주기: ' + z.nextDate, 'success');
-      }
+      // 이번 주기 마지막 날 지나 있으면 즉시 다음 주기로 이동
+      autoAdvanceCycle(z);
     }
   }
   saveState();

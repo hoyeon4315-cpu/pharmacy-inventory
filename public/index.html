@@ -3427,9 +3427,12 @@ function renderForecast() {
       <td class="num ${cls}">${f.diff > 0 ? '+' : ''}${f.diff}</td>
       <td>${f.status === 'shortage' ? '<span class="badge badge-red">부족</span>' : f.status === 'tight' ? '<span class="badge badge-yellow">주의</span>' : '<span class="badge badge-green">정상</span>'}</td>
       <td><input type="number" class="order-input" data-code="${f.code}" data-barcode="${f.barcode}" min="0" value=""></td>
-      <td class="text-center"><button class="btn btn-secondary btn-sm" onclick="hideDrug('${f.code}');renderForecast();" title="숨기기" style="padding:2px 6px;font-size:11px;">숨김</button></td>
+      <td class="text-center"><button class="btn btn-secondary btn-sm forecast-hide-btn" data-code="${f.code}" title="숨기기" style="padding:2px 6px;font-size:11px;">숨김</button></td>
     </tr>`;
   }).join('');
+  tbody.querySelectorAll('.forecast-hide-btn').forEach(btn => {
+    btn.addEventListener('click', () => { hideDrug(btn.dataset.code); renderForecast(); });
+  });
 }
 
 // ============================================================

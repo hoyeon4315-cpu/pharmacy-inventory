@@ -3537,9 +3537,31 @@ function addZeroDrug() {
   if (!patient || !drugCode || !drugName || !lastDate) {
     toast('환자명, 약품, 마지막투여일을 모두 입력하세요.', 'error'); return;
   }
-  const nextDate = new Date(lastDate);
-  nextDate.setDate(nextDate.getDate() + cycle * 7);
-  var nd = nextDate.getFullYear()+'-'+String(nextDate.getMonth()+1).padStart(2,'0')+'-'+String(nextDate.getDate()).padStart(2,'0');
+  // Day 목록 계산 (등록 시점 임시)
+  const tmpZ = { dayType, dayEnd, dayPick };
+  const tmpDayList = getDayList(tmpZ);
+  const maxDay = tmpDayList[tmpDayList.length - 1] || 1;
+  // lastDate를 이번 주기 D1로 해석 → 이번 주기가 아직 진행 중인지 판단
+  const todayStr = today();
+  const lastEnd = (function(){ const d = parseLocalYmd(lastDate); d.setDate(d.getDate() + (maxDay - 1)); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+  let actualLast, actualNext, donedays = [];
+  if (lastDate <= todayStr && todayStr <= lastEnd) {
+    // 이번 주기가 진행 중: lastDate를 현재 주기의 D1로 사용
+    actualNext = lastDate;
+    const prev = parseLocalYmd(lastDate); prev.setDate(prev.getDate() - cycle * 7);
+    actualLast = prev.getFullYear()+'-'+String(prev.getMonth()+1).padStart(2,'0')+'-'+String(prev.getDate()).padStart(2,'0');
+    // 오늘까지 지난 Day는 자동 완료
+    tmpDayList.forEach(dn => {
+      const dt = parseLocalYmd(lastDate); dt.setDate(dt.getDate() + (dn - 1));
+      const dStr = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+      if (dStr <= todayStr) donedays.push(dn);
+    });
+  } else {
+    // 기존 동작: 다음 주기 = lastDate + cycle
+    const nx = parseLocalYmd(lastDate); nx.setDate(nx.getDate() + cycle * 7);
+    actualNext = nx.getFullYear()+'-'+String(nx.getMonth()+1).padStart(2,'0')+'-'+String(nx.getDate()).padStart(2,'0');
+    actualLast = lastDate;
+  }
   state.zeroDrugs.push({
     id: Date.now(),
     patient, regNo,
@@ -3548,8 +3570,9 @@ function addZeroDrug() {
     cycleWeeks: cycle,
     qty,
     dayType, dayEnd, dayPick,
-    lastDate,
-    nextDate: nd
+    lastDate: actualLast,
+    nextDate: actualNext,
+    donedays
   });
   saveState();
   renderZeroDrugs();

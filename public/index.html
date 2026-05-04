@@ -1135,6 +1135,28 @@ async function loadOtherMaster() {
 }
 
 // ── 항암제 일별 통계 빌드 (AI 분석용) ──
+function getPatientKey(row) {
+  return String(row.regNo || row.patient || '').trim();
+}
+
+function getSessionBucket(row) {
+  var bucket = String(row.ampm || row.category || '').trim();
+  if (bucket === 'AM' || bucket === '오전') return 'AM';
+  if (bucket === 'PM' || bucket === '오후') return 'PM';
+  return '';
+}
+
+function countSessionPatients(rows) {
+  var patients = {};
+  rows.forEach(function(row) {
+    var key = getPatientKey(row);
+    if (!key) return;
+    var bucket = getSessionBucket(row);
+    patients[key + (bucket ? '|' + bucket : '')] = 1;
+  });
+  return Object.keys(patients).length;
+}
+
 function buildChemoStats(date) {
   if (appDataType !== 'chemo') return null;
   var mix = state.inpatientMix || [];
@@ -1142,13 +1164,10 @@ function buildChemoStats(date) {
   if (mix.length === 0 && out.length === 0) return null;
 
   // 환자 수 (이름 또는 등록번호 기준)
-  var inPtsSet = {};
-  mix.forEach(function(r) { var k = r.patient || r.regNo; if (k) inPtsSet[k] = 1; });
+  var inPtsCnt = countSessionPatients(mix);
   var outPtsSet = {};
-  out.forEach(function(r) { var k = r.patient || r.regNo; if (k) outPtsSet[k] = 1; });
-  var allPtsSet = {};
-  Object.keys(inPtsSet).forEach(function(k) { allPtsSet[k] = 1; });
-  Object.keys(outPtsSet).forEach(function(k) { allPtsSet[k] = 1; });
+  out.forEach(function(r) { var k = getPatientKey(r); if (k) outPtsSet[k] = 1; });
+  var outPtsCnt = Object.keys(outPtsSet).length;
 
   // 카테고리별 건수 (긴급/정규/추가1/추가2)
   var cats = {};
@@ -1210,9 +1229,9 @@ function buildChemoStats(date) {
 
   return {
     d: date,
-    inPts: Object.keys(inPtsSet).length,
-    outPts: Object.keys(outPtsSet).length,
-    totalPts: Object.keys(allPtsSet).length,
+    inPts: inPtsCnt,
+    outPts: outPtsCnt,
+    totalPts: inPtsCnt + outPtsCnt,
     inRx: Object.keys(inRxSet).length,
     outRx: Object.keys(outRxSet).length,
     totalRx: Object.keys(inRxSet).length + Object.keys(outRxSet).length,
@@ -1759,12 +1778,11 @@ function buildAmPmStatsForDate(mix, out) {
     if (r.ampm === '오후') { outPmPts.add(pk); outPmRx.add(rxKey); }
     else { outAmPts.add(pk); outAmRx.add(rxKey); }
   });
-  var allInPts = new Set([...amPts, ...pmPts]);
   var allInRx = new Set([...amRx, ...pmRx]);
   return {
     amP: amPts.size, amR: amRx.size,
     pmP: pmPts.size, pmR: pmRx.size,
-    inP: allInPts.size, inR: allInRx.size,
+    inP: amPts.size + pmPts.size, inR: allInRx.size,
     outP: outPts.size, outR: outRx.size,
     outAmP: outAmPts.size, outAmR: outAmRx.size,
     outPmP: outPmPts.size, outPmR: outPmRx.size,

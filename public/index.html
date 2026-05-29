@@ -316,6 +316,12 @@ body.general-mode .text-blue { color:#16a34a; }
 #tab-stats .stats-bordered th { background:#f1f5f9; font-weight:700; color:#334155; }
 #tab-stats .stats-bordered tr:hover { background:#f8fafc; }
 #tab-stats .stats-bordered .total-row { font-weight:700; background:#e2e8f0 !important; }
+/* 일자 구분 (total 행 하단) */
+#tab-stats .stats-bordered .day-sep td, #tab-stats .stats-bordered .day-sep th { border-bottom:2px solid #475569 !important; }
+/* 입원↔외래 그룹 경계 (입원조제건수 우측) */
+#tab-stats .stats-bordered .col-sep-group { border-right:2px solid #475569 !important; }
+/* 헤더 경계도 동일 */
+#tab-stats .stats-bordered th.col-sep-group { border-right:2px solid #475569 !important; }
 @media print {
   .stats-print-target { position:fixed; top:0; left:0; width:100%; z-index:99999; background:#fff; }
   .stats-print-hide { display:none !important; }
@@ -610,6 +616,18 @@ body.general-mode .text-blue { color:#16a34a; }
           <th style="width:40px;"></th>
         </tr></thead>
         <tbody id="forecastBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" id="forecastHiddenCard" style="display:none;">
+    <div class="flex-between mb-8">
+      <h3 style="border:none;padding:0;margin:0;">숨긴 약품</h3>
+      <button class="btn btn-secondary btn-sm" onclick="unhideAllDrugs();renderForecast();">전체 보이기</button>
+    </div>
+    <div class="table-wrap" style="max-height:250px;">
+      <table>
+        <thead><tr><th>약품코드</th><th>약품명</th><th style="text-align:center">복원</th></tr></thead>
+        <tbody id="forecastHiddenBody"></tbody>
       </table>
     </div>
   </div>
@@ -1134,6 +1152,20 @@ async function loadOtherMaster() {
   } catch(e) { /* 무시 - 뉴스 매칭만 영향 */ }
 }
 
+function getStatsPatientKey(row) {
+  if (!row) return '?';
+  var regNo = String(row.regNo || '').trim();
+  if (regNo) return regNo;
+  var patient = String(row.patient || '').trim();
+  if (patient) return patient;
+  return '?';
+}
+function getStatsRxKey(row) {
+  if (!row) return '?|?';
+  var rxUnit = (typeof cleanDrugName === 'function' ? cleanDrugName(row.name || '') : '') || String(row.code || '?').trim();
+  return getStatsPatientKey(row) + '|' + rxUnit;
+}
+
 // ── 항암제 일별 통계 빌드 (AI 분석용) ──
 function getPatientKey(row) {
   return String(row.regNo || row.patient || '').trim();
@@ -1166,7 +1198,7 @@ function buildChemoStats(date) {
   // 환자 수 (이름 또는 등록번호 기준)
   var inPtsCnt = countSessionPatients(mix);
   var outPtsSet = {};
-  out.forEach(function(r) { var k = getPatientKey(r); if (k) outPtsSet[k] = 1; });
+  out.forEach(function(r) { var k = getStatsPatientKey(r); if (k) outPtsSet[k] = 1; });
   var outPtsCnt = Object.keys(outPtsSet).length;
 
   // 카테고리별 건수 (긴급/정규/추가1/추가2)
@@ -1178,9 +1210,9 @@ function buildChemoStats(date) {
   mix.forEach(function(r) {
     if (!r.doctor) return;
     if (!docMap[r.doctor]) docMap[r.doctor] = { rx: {}, pts: {} };
-    var pk = r.patient || r.regNo || '?';
+    var pk = getStatsPatientKey(r);
     docMap[r.doctor].pts[pk] = 1;
-    docMap[r.doctor].rx[pk + '|' + r.code] = 1;
+    docMap[r.doctor].rx[getStatsRxKey(r)] = 1;
   });
   var doctors = {};
   Object.keys(docMap).forEach(function(d) {
@@ -1192,13 +1224,13 @@ function buildChemoStats(date) {
   mix.forEach(function(r) {
     if (!drugMap[r.code]) drugMap[r.code] = { n: r.name, iQ: 0, oQ: 0, pts: {} };
     drugMap[r.code].iQ += r.totalQty || r.dose || 0;
-    var pk = r.patient || r.regNo;
+    var pk = getStatsPatientKey(r);
     if (pk) drugMap[r.code].pts[pk] = 1;
   });
   out.forEach(function(r) {
     if (!drugMap[r.code]) drugMap[r.code] = { n: r.name, iQ: 0, oQ: 0, pts: {} };
-    drugMap[r.code].oQ += r.totalQty || 0;
-    var pk = r.patient || r.regNo;
+    drugMap[r.code].oQ += getOutpatientDailyQty(r);
+    var pk = getStatsPatientKey(r);
     if (pk) drugMap[r.code].pts[pk] = 1;
   });
   var drugs = [];
@@ -1215,9 +1247,9 @@ function buildChemoStats(date) {
 
   // 처방건수 = unique (환자, 약품코드) 조합 (같은 환자의 같은 약 여러 행은 1건)
   var inRxSet = {};
-  mix.forEach(function(r) { var pk = (r.patient||r.regNo||'?') + '|' + r.code; inRxSet[pk] = 1; });
+  mix.forEach(function(r) { inRxSet[getStatsRxKey(r)] = 1; });
   var outRxSet = {};
-  out.forEach(function(r) { var pk = (r.patient||r.regNo||'?') + '|' + r.code; outRxSet[pk] = 1; });
+  out.forEach(function(r) { outRxSet[getStatsRxKey(r)] = 1; });
   // 약품건수 = unique 약품코드
   var inDrugSet = {};
   mix.forEach(function(r) { inDrugSet[r.code] = 1; });
@@ -1348,15 +1380,16 @@ function printStatsSection(section) {
 function cleanDrugName(name) {
   if (!name) return '';
   var cleaned = name;
-  // 여러 suffix가 겹칠 수 있어 반복 적용: 괄호 → 단위용량 → 제형토큰 → 꼬리숫자 → 구두점
+  // 여러 suffix가 겹칠 수 있어 반복 적용: 괄호 → 단위용량 → 제형토큰 → 투여경로 → 꼬리숫자 → 구두점
   for (var i = 0; i < 8; i++) {
     var before = cleaned;
     // 괄호 내용 제거
     cleaned = cleaned.replace(/\s*\([^)]*\)/g, '');
     // 숫자+단위(mg, ml, g 등) 제거
     cleaned = cleaned.replace(/\s*\d+[\d,.]*\s*(mg|ml|g|mcg|ug|iu|unit|mci|mbq|%)\b/gi, ' ');
-    // 제형 토큰 제거 (inj, tab, cap 등) — SC/IV/PO 같은 route는 보존
-    cleaned = cleaned.replace(/(^|\s)(inj|tab|cap|syr|amp|vial|kit|bag|btl|pen|sol|cream|oint|patch|susp|pwd|powder)\b\.?/gi, ' ');
+    // 제형 토큰 제거 (inj, tab, cap 등) — 하이픈 앞도 매칭
+    cleaned = cleaned.replace(/(^|\s|\-)(inj|tab|cap|syr|amp|vial|kit|bag|btl|pen|sol|cream|oint|patch|susp|pwd|powder)\b\.?/gi, ' ');
+    // 투여경로 토큰은 제거하지 않음 (맙테라 SC ≠ 맙테라 등 별개 약품)
     // 꼬리 숫자 제거 (단위 없이 "Ditaxel-1", "Ditaxel 1")
     cleaned = cleaned.replace(/[\s\-]+\d+(\.\d+)?\s*$/g, '');
     // 영문 4자+ 바로 뒤에 붙은 번호 제거 ("Ditaxel1" → "Ditaxel"). B12, K1 등 3자 이하는 보존
@@ -1435,6 +1468,46 @@ function getStatsData() {
 function isFullAggregate(s) {
   return !!(s && (s.depts || s.drugDept || s.drugDetail));
 }
+function getMappedDeptFromEtcEntry(entry) {
+  var doctor = String(entry || '').split('/')[0].trim();
+  if (!doctor || doctor === '(처방의없음)') return '';
+  var map = (state && state.doctorDeptMap) || {};
+  var mapped = map[doctor];
+  return mapped && mapped !== '기타' ? mapped : '';
+}
+function remapCachedAggregateDepts(s) {
+  if (!s || !s.depts || !s.depts['기타'] || !(s.etcDoctors || []).length) return s;
+  var mappedSet = {};
+  for (var i = 0; i < s.etcDoctors.length; i++) {
+    var mapped = getMappedDeptFromEtcEntry(s.etcDoctors[i]);
+    if (!mapped) return s;
+    mappedSet[mapped] = 1;
+  }
+  var mappedDepts = Object.keys(mappedSet);
+  if (mappedDepts.length !== 1) return s;
+  var target = mappedDepts[0];
+  var out = Object.assign({}, s);
+  out.depts = {};
+  Object.keys(s.depts).forEach(function(d) {
+    if (d !== '기타') out.depts[d] = { pts: s.depts[d].pts || 0, rx: s.depts[d].rx || 0 };
+  });
+  if (!out.depts[target]) out.depts[target] = { pts: 0, rx: 0 };
+  out.depts[target].pts += s.depts['기타'].pts || 0;
+  out.depts[target].rx += s.depts['기타'].rx || 0;
+  out.drugDept = {};
+  Object.keys(s.drugDept || {}).forEach(function(name) {
+    var src = s.drugDept[name] || {};
+    var dst = {};
+    Object.keys(src).forEach(function(k) { dst[k] = src[k]; });
+    if (dst['기타']) {
+      dst[target] = (dst[target] || 0) + dst['기타'];
+      delete dst['기타'];
+    }
+    out.drugDept[name] = dst;
+  });
+  out.etcDoctors = [];
+  return out;
+}
 // 일별 집계 객체 가져오기 (raw 우선, 없으면 서버 캐시)
 function getDailyAggregateForDate(date, perDate) {
   if (perDate && perDate[date]) {
@@ -1443,7 +1516,7 @@ function getDailyAggregateForDate(date, perDate) {
     if (hasRaw) return buildDailyStatsFull(d.mix || [], d.out || []);
   }
   if (_longTermStatsCache && _longTermStatsCache.data && isFullAggregate(_longTermStatsCache.data[date])) {
-    return _longTermStatsCache.data[date];
+    return remapCachedAggregateDepts(_longTermStatsCache.data[date]);
   }
   return null;
 }
@@ -1523,6 +1596,18 @@ function renderStats() {
   var totP = sumS.inP + sumS.outP;
   var inP = sumS.inP, outP = sumS.outP, inR = sumS.inR, outR = sumS.outR;
   var inDrugN = 0, outDrugN = 0, allDrugN = Object.keys(sumS.drugDept).length;
+  // drugDetail도 재정규화 (캐시의 옛 키 병합)
+  var normDetail = {};
+  Object.keys(sumS.drugDetail || {}).forEach(function(cn){
+    var norm = cleanDrugName(cn); if (!norm) norm = cn;
+    if (!normDetail[norm]) normDetail[norm] = { inQty:0, outQty:0, inPts:0, outPts:0 };
+    var s = sumS.drugDetail[cn];
+    normDetail[norm].inQty += (s.inQty||0);
+    normDetail[norm].outQty += (s.outQty||0);
+    normDetail[norm].inPts += (s.inPts||0);
+    normDetail[norm].outPts += (s.outPts||0);
+  });
+  sumS.drugDetail = normDetail;
   // 약품 카운트는 drugDetail로부터 추산
   Object.keys(sumS.drugDetail).forEach(function(cn){
     var d = sumS.drugDetail[cn];
@@ -1559,7 +1644,18 @@ function renderStats() {
 
   // ── 약품 × 진료과 매트릭스 (집계 합산) ──
   var deptOrder = ['IMR','IMH','IMN','IME','IMI','IMJ','GIC','GS','OG','UR','OS','CV','TS','NS','NR','RH','OT','PD','HOSPICE','기타'];
-  var drugDept = sumS.drugDept || {};
+  // 서버 캐시의 옛 키를 현재 cleanDrugName으로 재정규화 (중복 병합)
+  var rawDrugDept = sumS.drugDept || {};
+  var drugDept = {};
+  Object.keys(rawDrugDept).forEach(function(cn){
+    var norm = cleanDrugName(cn);
+    if (!norm) norm = cn;
+    if (!drugDept[norm]) drugDept[norm] = { code: rawDrugDept[cn].code };
+    Object.keys(rawDrugDept[cn]).forEach(function(k){
+      if (k === 'code') return;
+      drugDept[norm][k] = (drugDept[norm][k]||0) + (rawDrugDept[cn][k]||0);
+    });
+  });
   var usedDepts = {};
   Object.keys(drugDept).forEach(function(cn){
     Object.keys(drugDept[cn]).forEach(function(k){ if (k !== 'code') usedDepts[k] = 1; });
@@ -1643,8 +1739,9 @@ function buildDailyStatsFull(mix, out) {
   fMix.concat(fOut).forEach(function(r){
     var dc = getDeptCode(r.doctor, r.dept);
     if (!depts[dc]) depts[dc] = { pts:{}, rx:{} };
-    depts[dc].pts[r.patient||r.regNo||'?'] = 1;
-    depts[dc].rx[(r.patient||r.regNo||'?')+'|'+r.code] = 1;
+    var patientKey = getStatsPatientKey(r);
+    depts[dc].pts[patientKey] = 1;
+    depts[dc].rx[getStatsRxKey(r)] = 1;
   });
   s.depts = {};
   Object.keys(depts).forEach(function(d){
@@ -1658,7 +1755,7 @@ function buildDailyStatsFull(mix, out) {
     var dc = getDeptCode(r.doctor, r.dept);
     if (!drugDept[cn]) drugDept[cn] = { code:r.code };
     if (!drugDept[cn][dc]) drugDept[cn][dc] = new Set();
-    drugDept[cn][dc].add((r.patient||r.regNo||'?')+'|'+r.code);
+    drugDept[cn][dc].add(getStatsRxKey(r));
   });
   s.drugDept = {};
   Object.keys(drugDept).forEach(function(cn){
@@ -1675,13 +1772,13 @@ function buildDailyStatsFull(mix, out) {
     var cn = cleanDrugName(r.name);
     if (!drugDetail[cn]) drugDetail[cn] = { inQty:0, outQty:0, inPts:{}, outPts:{} };
     drugDetail[cn].inQty += r.totalQty || r.dose || 0;
-    drugDetail[cn].inPts[r.patient||r.regNo||'?'] = 1;
+    drugDetail[cn].inPts[getStatsPatientKey(r)] = 1;
   });
   fOut.forEach(function(r){
     var cn = cleanDrugName(r.name);
     if (!drugDetail[cn]) drugDetail[cn] = { inQty:0, outQty:0, inPts:{}, outPts:{} };
-    drugDetail[cn].outQty += r.totalQty || 0;
-    drugDetail[cn].outPts[r.patient||r.regNo||'?'] = 1;
+    drugDetail[cn].outQty += getOutpatientDailyQty(r);
+    drugDetail[cn].outPts[getStatsPatientKey(r)] = 1;
   });
   s.drugDetail = {};
   Object.keys(drugDetail).forEach(function(cn){
@@ -1758,8 +1855,8 @@ function buildAmPmStatsForDate(mix, out) {
   var amPts = new Set(), pmPts = new Set(), amRx = new Set(), pmRx = new Set();
   var before10Pts = new Set(), before10Rx = new Set();
   mix.forEach(function(r) {
-    var pk = (r.patient || '?') + '|' + (r.regNo || '');
-    var rxKey = pk + '|' + (r.bundleNo || r.code || '?');
+    var pk = (typeof getStatsPatientKey === 'function') ? getStatsPatientKey(r) : getPatientKey(r);
+    var rxKey = (typeof getStatsRxKey === 'function') ? getStatsRxKey(r) : pk + '|' + (r.code || '?');
     if (r.ampm === '오전') { amPts.add(pk); amRx.add(rxKey); }
     else if (r.ampm === '오후') { pmPts.add(pk); pmRx.add(rxKey); }
     else { amPts.add(pk); amRx.add(rxKey); }
@@ -1771,9 +1868,9 @@ function buildAmPmStatsForDate(mix, out) {
   var outPts = new Set(), outRx = new Set();
   var outAmPts = new Set(), outAmRx = new Set(), outPmPts = new Set(), outPmRx = new Set();
   out.forEach(function(r) {
-    var pk = (r.patient || '?') + '|' + (r.regNo || '');
+    var pk = (typeof getStatsPatientKey === 'function') ? getStatsPatientKey(r) : getPatientKey(r);
     outPts.add(pk);
-    var rxKey = pk + '|' + (r.bundleNo || r.code || '?');
+    var rxKey = (typeof getStatsRxKey === 'function') ? getStatsRxKey(r) : pk + '|' + (r.code || '?');
     outRx.add(rxKey);
     if (r.ampm === '오후') { outPmPts.add(pk); outPmRx.add(rxKey); }
     else { outAmPts.add(pk); outAmRx.add(rxKey); }
@@ -1863,8 +1960,8 @@ function renderAmpmStats(sd) {
   html += '<div style="text-align:center;margin-bottom:12px;"><span style="font-size:20px;font-weight:800;color:#1e293b;letter-spacing:1px;">' + monthLabel + ' 조제통계</span></div>';
   html += '<div style="overflow-x:auto;"><table class="stats-bordered">';
   html += '<thead><tr><th style="width:30px;">요일</th><th style="width:50px;">날짜</th><th style="width:45px;"></th>';
-  html += '<th style="text-align:right;">입원 환자수</th><th style="text-align:right;">입원 조제건수</th>';
-  html += '<th style="text-align:right;">외래 환자수</th><th style="text-align:right;">외래 조제건수</th>';
+  html += '<th style="text-align:right;">입원 환자수</th><th class="col-sep-group" style="text-align:right;">입원 조제건수</th>';
+  html += '<th style="text-align:right;">외래 환자수</th><th class="col-sep-group" style="text-align:right;">외래 조제건수</th>';
   html += '<th style="text-align:right;">Total 조제건수</th>';
   html += '</tr></thead><tbody>';
 
@@ -1911,25 +2008,25 @@ function renderAmpmStats(sd) {
     html += '<tr style="' + noDataStyle + '"><td rowspan="3" style="text-align:center;font-weight:700;vertical-align:middle;' + dayStyle + '">' + dayName + '</td>';
     html += '<td rowspan="3" style="text-align:center;vertical-align:middle;">' + day + '</td>';
     html += '<td style="text-align:center;font-weight:600;color:#2563eb;">AM</td>';
-    html += '<td class="num">' + amInP + '</td><td class="num">' + amInR + '</td>';
-    html += '<td class="num">' + amOutP + '</td><td class="num">' + amOutR + '</td>';
+    html += '<td class="num">' + amInP + '</td><td class="num col-sep-group">' + amInR + '</td>';
+    html += '<td class="num">' + amOutP + '</td><td class="num col-sep-group">' + amOutR + '</td>';
     html += '<td class="num">' + (amTotal + amOutR) + '</td></tr>';
     // PM 행
     html += '<tr style="' + noDataStyle + '"><td style="text-align:center;font-weight:600;color:#dc2626;">PM</td>';
-    html += '<td class="num">' + pmInP + '</td><td class="num">' + pmInR + '</td>';
-    html += '<td class="num">' + pmOutP + '</td><td class="num">' + pmOutR + '</td>';
+    html += '<td class="num">' + pmInP + '</td><td class="num col-sep-group">' + pmInR + '</td>';
+    html += '<td class="num">' + pmOutP + '</td><td class="num col-sep-group">' + pmOutR + '</td>';
     html += '<td class="num">' + (pmTotal + pmOutR) + '</td></tr>';
-    // total 행
-    html += '<tr style="background:#f8fafc;font-weight:600;' + noDataStyle + '"><td style="text-align:center;">total</td>';
-    html += '<td class="num">' + totInP + '</td><td class="num">' + totInR + '</td>';
-    html += '<td class="num">' + totOutP + '</td><td class="num">' + totOutR + '</td>';
+    // total 행 (일자 구분 굵은 선)
+    html += '<tr class="day-sep" style="background:#f8fafc;font-weight:600;' + noDataStyle + '"><td style="text-align:center;">total</td>';
+    html += '<td class="num">' + totInP + '</td><td class="num col-sep-group">' + totInR + '</td>';
+    html += '<td class="num">' + totOutP + '</td><td class="num col-sep-group">' + totOutR + '</td>';
     html += '<td class="num" style="font-weight:700;">' + totAll + '</td></tr>';
   });
 
   // 월 합계
   html += '<tr class="total-row"><td colspan="3" style="text-align:center;">합계 (' + dataExistDays + '일)</td>';
-  html += '<td class="num">' + grandInPts + '</td><td class="num">' + grandInRx + '</td>';
-  html += '<td class="num">' + grandOutPts + '</td><td class="num">' + grandOutRx + '</td>';
+  html += '<td class="num">' + grandInPts + '</td><td class="num col-sep-group">' + grandInRx + '</td>';
+  html += '<td class="num">' + grandOutPts + '</td><td class="num col-sep-group">' + grandOutRx + '</td>';
   html += '<td class="num">' + grandTotal + '</td></tr>';
 
   html += '</tbody></table></div>';
@@ -1947,11 +2044,15 @@ async function _saveToD1Impl() {
   if (appMode !== 'admin' || !authToken) return;
   const daily = state.dailyData;
   const tempUsage = state.dailyUsage;
+  const tempMix = state.inpatientMix;
+  const tempOutpatient = state.outpatientData;
   let dataStr = '';
   updateSyncBadge('syncing');
   try {
     state.dailyData = {};
     state.dailyUsage = [];
+    state.inpatientMix = [];
+    state.outpatientData = [];
     state._dataType = appDataType; // 서버 사이드 타입 검증용
     dataStr = JSON.stringify(state);
     var dKeys = Object.keys(daily).sort();
@@ -1996,12 +2097,16 @@ async function _saveToD1Impl() {
     var timeStr = now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0');
     updateSyncBadge('ok', timeStr);
     _longTermStatsCache = null; // 저장 성공 시 장기통계 캐시 무효화
+    // 통계 탭이 열려 있으면 재렌더 (처방의 매핑 변경 반영)
+    if (document.querySelector('#tab-stats.active') && typeof renderStats === 'function') renderStats();
   } catch (e) {
     console.warn('D1 저장 실패:', e);
     updateSyncBadge('fail', e.message);
   } finally {
     state.dailyData = daily;
     state.dailyUsage = tempUsage;
+    state.inpatientMix = tempMix;
+    state.outpatientData = tempOutpatient;
   }
 }
 
@@ -2196,6 +2301,15 @@ function normalizeExcelTime(val) {
   }
   return 0;
 }
+function getReceiptTimeFromRow(row) {
+  if (!row || typeof row !== 'object') return 0;
+  var timeFields = ['불출일시','불출시간','접수시간','접수시각','접수일시','처방시간','오더시간'];
+  for (var i = 0; i < timeFields.length; i++) {
+    var t = normalizeExcelTime(row[timeFields[i]]);
+    if (t > 0) return t;
+  }
+  return 0;
+}
 // .xls 한글 깨짐 복구: EUC-KR 바이트가 Latin-1로 해석된 경우 재디코딩
 function fixKoreanEncoding(str) {
   if (!str || typeof str !== 'string') return str;
@@ -2362,7 +2476,10 @@ function processFile(file, num) {
       saveState();
       updateUploadStatus();
       renderDashboard();
-      if (num !== 3) toast('파일 ' + num + ' 업로드 완료! (' + workDate + ')', 'success');
+      if (appDataType === 'chemo' && (num === 3 || num === 4) && document.querySelector('#tab-stats.active') && typeof renderStats === 'function') {
+        renderStats();
+      }
+      toast('파일 ' + num + ' 업로드 완료! (' + workDate + ')', 'success');
     } catch(err) {
       console.error(err);
       toast('파일 파싱 오류: ' + err.message, 'error');
@@ -2617,7 +2734,7 @@ function parseInpatientMix(wb) {
       var holdVal = String(r['보류'] || '').trim();
       if (dcVal || holdVal) return;
       // 접수시간 → 오전/오후
-      var receiptTime = normalizeExcelTime(r['접수시간']);
+      var receiptTime = getReceiptTimeFromRow(r);
       var ampm = receiptTime > 0 ? (receiptTime < 0.5 ? '오전' : '오후') : '';
       var rowCategory = useTimeCategory ? (ampm || '기타') : category;
       allData.push({
@@ -2671,9 +2788,9 @@ function parseOutpatient(wb) {
     freq: parseFloat(r['회수']) || 1,
     days: parseFloat(r['일수']) || 1,
     totalQty: parseFloat(r['총량']) || 0,
-    receiptTime: normalizeExcelTime(r['불출일시'] || r['접수시간'] || r['접수일시'] || r['처방시간']),
+    receiptTime: getReceiptTimeFromRow(r),
     ampm: (function(){
-      var t = normalizeExcelTime(r['불출일시'] || r['접수시간'] || r['접수일시'] || r['처방시간']);
+      var t = getReceiptTimeFromRow(r);
       return t > 0 ? (t < 0.5 ? '오전' : '오후') : '';
     })()
   })).filter(r => r.code);
@@ -2774,6 +2891,19 @@ function isVehicle(code) {
   return false;
 }
 
+// 외래 1행의 "당일 사용량" 환산 (하루 보고서 업로드 시 일수/총량 오해 방지)
+// 1회량 × 회수 우선, 없으면 총량/일수로 1일분 계산, 여전히 0이면 1(스케줄 1건 = 1사용)
+function getOutpatientDailyQty(r) {
+  if (!r) return 0;
+  const dose = parseFloat(r.dosePerTime) || 0;
+  const fr = parseFloat(r.freq) || 1;
+  if (dose > 0) return dose * fr;
+  const tot = parseFloat(r.totalQty) || 0;
+  const dy = parseFloat(r.days) || 1;
+  if (tot > 0) return (dy > 1 ? tot / dy : tot);
+  return 1;
+}
+
 // ============================================================
 // 잉여 약물 계산
 // ============================================================
@@ -2804,11 +2934,11 @@ function calculateSurplus() {
   // 외래 데이터 처리
   state.outpatientData.forEach(r => {
     if (isVehicle(r.code)) return;
-    const fracVia = r.dosePerTime > 0 ? r.dosePerTime : r.totalQty;
+    const qty = getOutpatientDailyQty(r);
     if (!drugPatients[r.code]) drugPatients[r.code] = { name: r.name, patients: [] };
     const existing = drugPatients[r.code].patients.find(p => p.name === r.patient);
-    if (existing) { existing.fracVia += fracVia; existing.totalVia += r.totalQty; }
-    else drugPatients[r.code].patients.push({ name: r.patient, fracVia, totalVia: r.totalQty, category: '외래' });
+    if (existing) { existing.fracVia += qty; existing.totalVia += qty; }
+    else drugPatients[r.code].patients.push({ name: r.patient, fracVia: qty, totalVia: qty, category: '외래' });
   });
 
   // 현재 타입의 마스터만 필터링
@@ -2907,10 +3037,25 @@ function getDemandForecast() {
   }
 
   // 실재고 매핑 + 물품코드(barcode) 매핑
+  // realInvMap: 대표물품코드(EDI) → realQty
+  // realInvByBarcode: 물품코드(barcode) → realQty (수요예측 파일의 약품코드가 물품코드인 경우 fallback)
   const realInvMap = {};
   const sysInvMap = {};
   const barcodeMap = {};
-  getRealInventory().forEach(r => { realInvMap[r.code] = r.realQty; sysInvMap[r.code] = r.systemQty; barcodeMap[r.code] = r.barcode || ''; });
+  const realInvByBarcode = {};
+  const sysInvByBarcode = {};
+  getRealInventory().forEach(r => {
+    realInvMap[r.code] = r.realQty;
+    sysInvMap[r.code] = r.systemQty;
+    barcodeMap[r.code] = r.barcode || '';
+    if (r.barcode) {
+      realInvByBarcode[r.barcode] = r.realQty;
+      sysInvByBarcode[r.barcode] = r.systemQty;
+    }
+  });
+  // 역방향 매핑: barcode → 대표물품코드 (masterCodes 조회용)
+  const barcodeToCode = {};
+  Object.entries(barcodeMap).forEach(([code, bc]) => { if (bc) barcodeToCode[bc] = code; });
 
   // 현재 타입의 마스터만 필터링
   const masterCodes = getCurrentMasterCodes();
@@ -2918,18 +3063,25 @@ function getDemandForecast() {
   const hiddenSet = new Set(state.hiddenDrugs || []);
   const results = [];
   fu.items.forEach(item => {
-    if (masterCodes.size > 0 && !masterCodes.has(item.code)) return;
-    if (hiddenSet.has(item.code)) return;
+    // masterCodes는 대표물품코드 기준. item.code가 물품코드(barcode)인 경우도 허용
+    const resolvedCode = masterCodes.has(item.code) ? item.code : (barcodeToCode[item.code] || item.code);
+    if (masterCodes.size > 0 && !masterCodes.has(resolvedCode)) return;
+    if (hiddenSet.has(item.code) || hiddenSet.has(resolvedCode)) return;
     const dailyAvg = item.total / periodDays;
     const monthlyAvg = dailyAvg * 30;
-    const currentStock = realInvMap[item.code] || 0;
-    const systemStock = sysInvMap[item.code] || 0;
+    // 대표물품코드로 먼저 조회, 없으면 물품코드(barcode)로 fallback
+    const currentStock = realInvMap[item.code] !== undefined ? realInvMap[item.code]
+      : (realInvMap[resolvedCode] !== undefined ? realInvMap[resolvedCode]
+      : (realInvByBarcode[item.code] !== undefined ? realInvByBarcode[item.code] : 0));
+    const systemStock = sysInvMap[item.code] !== undefined ? sysInvMap[item.code]
+      : (sysInvMap[resolvedCode] !== undefined ? sysInvMap[resolvedCode]
+      : (sysInvByBarcode[item.code] !== undefined ? sysInvByBarcode[item.code] : 0));
     const queryNeed = queryDays > 0 ? Math.ceil(dailyAvg * queryDays) : 0;
     const diff = queryDays > 0 ? currentStock - queryNeed : currentStock - Math.ceil(monthlyAvg);
     const diffSystem = queryDays > 0 ? systemStock - queryNeed : systemStock - Math.ceil(monthlyAvg);
 
     results.push({
-      code: item.code, barcode: barcodeMap[item.code] || item.code, name: item.name,
+      code: item.code, barcode: barcodeMap[item.code] || barcodeMap[resolvedCode] || (/^\d+$/.test(item.code) ? item.code : '') || item.code, name: item.name,
       periodTotal: item.total,
       dailyAvg: parseFloat(dailyAvg.toFixed(1)),
       monthlyAvg: Math.round(monthlyAvg),
@@ -3035,7 +3187,7 @@ function getUsageMap() {
     });
     state.outpatientData.forEach(r => {
       if (isVehicle(r.code)) return;
-      map[r.code] = (map[r.code] || 0) + (r.totalQty || 0);
+      map[r.code] = (map[r.code] || 0) + getOutpatientDailyQty(r);
     });
   }
   return map;
@@ -3334,7 +3486,7 @@ function renderUsage() {
   state.outpatientData.forEach(r => {
     if (isVehicle(r.code)) return;
     if (!usageMap[r.code]) usageMap[r.code] = { code:r.code, name:r.name, inpatient:0, outpatient:0 };
-    usageMap[r.code].outpatient += r.totalQty || 0;
+    usageMap[r.code].outpatient += getOutpatientDailyQty(r);
   });
 
   let usageData = Object.values(usageMap).map(r => ({ ...r, total: r.inpatient + r.outpatient }));
@@ -3472,6 +3624,24 @@ function renderForecast() {
   tbody.querySelectorAll('.forecast-hide-btn').forEach(btn => {
     btn.addEventListener('click', () => { hideDrug(btn.dataset.code); renderForecast(); });
   });
+
+  // 숨긴 약품 카드
+  const hiddenSet = new Set(state.hiddenDrugs || []);
+  const fhCard = document.getElementById('forecastHiddenCard');
+  const fhBody = document.getElementById('forecastHiddenBody');
+  if (fhCard && fhBody) {
+    // forecastUsage에서 숨긴 약품 목록 추출
+    const hiddenItems = (fu.items || []).filter(i => hiddenSet.has(i.code));
+    if (hiddenItems.length === 0) {
+      fhCard.style.display = 'none';
+    } else {
+      fhCard.style.display = 'block';
+      fhBody.innerHTML = hiddenItems.map(i => `<tr>
+        <td>${i.code}</td><td>${i.name}</td>
+        <td class="text-center"><button class="btn btn-success btn-sm" onclick="unhideDrug('${i.code}');renderForecast();" style="padding:2px 8px;font-size:11px;">복원</button></td>
+      </tr>`).join('');
+    }
+  }
 }
 
 // ============================================================
@@ -4111,7 +4281,7 @@ function renderZeroDrugs() {
     html += `</div>`;
 
     // 메모 슬라이드 (환자 단위)
-    const memoText = g.drugs.map(d => d.memo).filter(m => m).join('\n') || '';
+    const memoText = [...new Set(g.drugs.map(d => d.memo).filter(m => m))].join('\n') || '';
     const memoDate = g.drugs.map(d => d.memoDate).filter(m => m).sort().pop() || '';
     html += `<div class="memo-slide" id="memo-${firstDrug.id}" style="border-top:none;">`;
     html += `<textarea id="memoText-${firstDrug.id}" placeholder="메모를 입력하세요...">${memoText}</textarea>`;
@@ -4236,8 +4406,10 @@ function addDoctor(deptCode) {
     if (!confirm(name + ' 은(는) 이미 ' + state.doctorDeptMap[name] + ' 에 등록되어 있습니다.\n' + deptCode + '로 이동하시겠습니까?')) return;
   }
   state.doctorDeptMap[name] = deptCode;
+  _longTermStatsCache = null; // 매핑 변경 시 즉시 통계 캐시 무효화
   renderDeptDoctorList();
   saveToD1();
+  if (typeof renderStats === 'function') renderStats();
   toast('추가됨: ' + name + ' → ' + deptCode, 'success');
 }
 function debugOutpatientTime() {
@@ -4289,8 +4461,10 @@ function removeDoctor(name) {
   ensureDoctorDeptMapInit();
   if (!confirm(name + ' 삭제?')) return;
   delete state.doctorDeptMap[name];
+  _longTermStatsCache = null;
   renderDeptDoctorList();
   saveToD1();
+  if (typeof renderStats === 'function') renderStats();
 }
 
 function renderMasterList() {
@@ -5606,17 +5780,23 @@ function init() {
     var dd = state.dailyData ? state.dailyData[todayStr] : null;
     if (dd && typeof dd === 'object') {
       if (dd.inventory) state.inventory = JSON.parse(JSON.stringify(dd.inventory));
-      if (dd.inpatientMix) state.inpatientMix = JSON.parse(JSON.stringify(dd.inpatientMix));
-      if (dd.outpatientData) state.outpatientData = JSON.parse(JSON.stringify(dd.outpatientData));
-      if (dd.dailyUsage) state.dailyUsage = JSON.parse(JSON.stringify(dd.dailyUsage));
+      // 오늘 dailyData에 해당 데이터가 있으면 복원, 없으면 비움 (이전 날짜 잔류 방지)
+      state.inpatientMix = dd.inpatientMix ? JSON.parse(JSON.stringify(dd.inpatientMix)) : [];
+      state.outpatientData = dd.outpatientData ? JSON.parse(JSON.stringify(dd.outpatientData)) : [];
+      state.dailyUsage = dd.dailyUsage ? JSON.parse(JSON.stringify(dd.dailyUsage)) : [];
       if (dd.inventoryFileType) state.inventoryFileType = dd.inventoryFileType;
       var udates = dd.uploadDates || {};
       state.uploadDates = {
         f1: udates.f1 || '',
-        f2: udates.f2 || '', // 사용량도 이제 저장됨
+        f2: udates.f2 || '',
         f3: udates.f3 || '',
         f4: udates.f4 || ''
       };
+    } else {
+      // 오늘 dailyData 자체가 없으면 사용량/MIX/외래 모두 비움
+      state.dailyUsage = [];
+      state.inpatientMix = [];
+      state.outpatientData = [];
     }
   } catch(e) { console.error('오늘 데이터 로드 실패:', e); }
   // inventoryFileType 초기화

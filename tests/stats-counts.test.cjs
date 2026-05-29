@@ -25,6 +25,8 @@ vm.runInContext(loadFunction('getPatientKey'), context);
 vm.runInContext(loadFunction('getSessionBucket'), context);
 vm.runInContext(loadFunction('countSessionPatients'), context);
 vm.runInContext(loadFunction('buildAmPmStatsForDate'), context);
+vm.runInContext(loadFunction('getMappedDeptFromEtcEntry'), context);
+vm.runInContext(loadFunction('remapCachedAggregateDepts'), context);
 
 const rows = [
   { patient: 'A', regNo: '1', category: 'AM' },
@@ -44,3 +46,16 @@ assert.strictEqual(context.buildAmPmStatsForDate([
   { patient: 'B', regNo: '2', ampm: '오전', code: 'X4' },
   { patient: 'C', regNo: '3', ampm: '오후', code: 'X5' },
 ], []).inP, 4);
+
+context.state = { doctorDeptMap: { '정재영': 'IMH' } };
+const remapped = context.remapCachedAggregateDepts({
+  depts: { '기타': { pts: 1, rx: 2 }, IMR: { pts: 3, rx: 5 } },
+  drugDept: {
+    Opdivo: { code: 'XNIVOL1', '기타': 1 },
+    Keytruda: { code: 'XPEMB1', IMR: 2 },
+  },
+  etcDoctors: ['정재영 / (진료과없음)'],
+});
+assert.strictEqual(JSON.stringify(remapped.depts), JSON.stringify({ IMR: { pts: 3, rx: 5 }, IMH: { pts: 1, rx: 2 } }));
+assert.strictEqual(remapped.drugDept.Opdivo.IMH, 1);
+assert.strictEqual(remapped.drugDept.Opdivo['기타'], undefined);

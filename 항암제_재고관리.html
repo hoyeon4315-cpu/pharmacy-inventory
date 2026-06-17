@@ -109,6 +109,7 @@ input:focus,select:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 
 .toast-success { background:#22c55e; }
 .toast-error { background:#ef4444; }
 .toast-info { background:#3b82f6; }
+.toast-warning { background:#78716c; }
 @keyframes slideIn { from{transform:translateX(100px);opacity:0} to{transform:translateX(0);opacity:1} }
 /* AI 챗봇 */
 .ai-fab { position:fixed !important; bottom:20px !important; right:20px !important; width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; border:none; cursor:pointer; box-shadow:0 4px 15px rgba(79,70,229,.4); z-index:99999 !important; display:flex; align-items:center; justify-content:center; transition:transform .2s,box-shadow .2s; }
@@ -544,7 +545,7 @@ body.general-mode .text-blue { color:#16a34a; }
     <div style="display:flex;gap:8px;margin-bottom:12px;" id="statsViewToggle">
       <button class="stats-toggle-btn active" onclick="toggleStatsView('dept')">진료과별 통계</button>
       <button class="stats-toggle-btn" onclick="toggleStatsView('ampm')">조제통계 (오전/오후)</button>
-      <button class="stats-print-btn" onclick="exportStatsDeptExcel()" style="margin-left:12px; background:#0ea5e9; color:white; border-color:#0ea5e9;">엑셀 다운로드 (진료과별 매트릭스 - 참조 순서)</button>
+      <button class="stats-print-btn" onclick="exportStatsDeptExcel()" style="margin-left:12px;">엑셀 다운로드 (보고용 양식)</button>
     </div>
     <div style="font-size:11px;color:#64748b;margin-bottom:8px;">※ 위 엑셀 버튼은 항상 클릭 가능합니다. (참조 파일의 진료과 컬럼 순서 GS→GIC→... 로 생성)</div>
     <!-- 진료과별 통계 섹션 -->
@@ -977,6 +978,10 @@ const STATS_DRUG_ALIASES = {
   'Methotrexate':'Methotrexate(5g)','Taxol':'Taxol 30mg','Paclitaxel':'Taxol 30mg',
   '5-fu':'5-FU','5-Fu':'5-FU','Herceptin sc':'Herceptin SC','Mabthera sc':'Mabthera SC'
 };
+const REPORT_DEPT_FALLBACK = {
+  'OS':'OR','CV':'기타','TS':'기타','NS':'기타','IME':'기타','IMI':'기타',
+  'RH':'기타','OT':'기타','PD':'기타','HOSPICE':'기타','Hospice':'기타'
+};
 
 // 항암제 코드 → 성분명(INN) 매핑
 const CODE_TO_INGREDIENT = {};
@@ -1188,16 +1193,17 @@ function buildChemoStats(date) {
   });
 
   // 약품별 사용량
+  // 각 환자의 fractional vial을 개별 올림 처리 (4.63 via → 5 via, 0.37 via → 1 via)
   var drugMap = {};
   mix.forEach(function(r) {
     if (!drugMap[r.code]) drugMap[r.code] = { n: r.name, iQ: 0, oQ: 0, pts: {} };
-    drugMap[r.code].iQ += r.totalQty || r.dose || 0;
+    drugMap[r.code].iQ += Math.ceil(r.totalQty || (r.dose || 0));
     var pk = r.patient || r.regNo;
     if (pk) drugMap[r.code].pts[pk] = 1;
   });
   out.forEach(function(r) {
     if (!drugMap[r.code]) drugMap[r.code] = { n: r.name, iQ: 0, oQ: 0, pts: {} };
-    drugMap[r.code].oQ += r.totalQty || 0;
+    drugMap[r.code].oQ += Math.ceil(r.totalQty || 0);
     var pk = r.patient || r.regNo;
     if (pk) drugMap[r.code].pts[pk] = 1;
   });
@@ -1301,6 +1307,11 @@ function getOrderedDepts(used, preferred) {
   }
   return result;
 }
+function getReportDeptCode(doctor, deptFallback) {
+  var code = getDeptCode(doctor, deptFallback);
+  if (DEFAULT_STATS_DEPT_ORDER.indexOf(code) >= 0) return code;
+  return REPORT_DEPT_FALLBACK[code] || '기타';
+}
 
 var _statsPeriod = 'daily';
 function setStatsPeriod(mode) {
@@ -1356,7 +1367,7 @@ function startDeptOrderEdit() {
 
   var used = {};
   fMix.concat(fOut).forEach(function(r){
-    var d = getDeptCode(r.doctor);
+    var d = getReportDeptCode(r.doctor, r.dept);
     used[d] = true;
   });
 
@@ -1457,69 +1468,133 @@ function formatStatsReportFilename(label) {
   var safe = (label || today()).replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
   return '항암제_조제통계_' + safe + '.xlsx';
 }
+
+function applyStatsReportGridBorders(ws, opts) {
+  var hdrRow = 1;
+  var totalRow = opts.totalRow;
+  var tpnRow = opts.tpnRow;
+  var lastCol = 12;
+  var thin = { style: 'thin', color: { rgb: '000000' } };
+  var medium = { style: 'medium', color: { rgb: '000000' } };
+  function ec(r, c) {
+    var addr = XLSX.utils.encode_cell({ r: r, c: c });
+    if (!ws[addr]) ws[addr] = { t: 'z', s: {} };
+    if (!ws[addr].s) ws[addr].s = {};
+    return ws[addr];
+  }
+  for (var R = hdrRow; R <= tpnRow; R++) {
+    for (var C = 0; C <= lastCol; C++) {
+      var cell = ec(R, C);
+      var top = thin, bottom = thin, left = thin, right = thin;
+      if (C === 0) { left = medium; right = medium; }
+      if (C === lastCol) { left = medium; right = medium; }
+      if (R === hdrRow) top = medium;
+      if (R === totalRow) top = medium;
+      if (R === tpnRow) bottom = medium;
+      cell.s.border = { top: top, bottom: bottom, left: left, right: right };
+    }
+  }
+}
+
+function applyStatsReportFillsOnly(ws, opts) {
+  var totalRow = opts.totalRow;
+  var tpnRow = opts.tpnRow;
+  var lastCol = 12;
+  var headerFill = { patternType: 'solid', fgColor: { rgb: 'FFEEECE1' } };
+  var totalFill = { patternType: 'solid', fgColor: { rgb: 'FFD9D9D9' } };
+  function ec(r, c) {
+    var addr = XLSX.utils.encode_cell({ r: r, c: c });
+    if (!ws[addr]) ws[addr] = { t: 'z', s: {} };
+    if (!ws[addr].s) ws[addr].s = {};
+    return ws[addr];
+  }
+  for (var c = 1; c <= lastCol; c++) ec(1, c).s.fill = headerFill;
+  for (var r = 2; r < totalRow; r++) ec(r, lastCol).s.fill = headerFill;
+  for (var c = 0; c < lastCol; c++) ec(totalRow, c).s.fill = totalFill;
+  ec(totalRow, lastCol).s.fill = headerFill;
+  ec(tpnRow, lastCol).s.fill = headerFill;
+}
+function applyStatsReportStyle(ws, opts) {
+  applyStatsReportGridBorders(ws, opts);
+  applyStatsReportFillsOnly(ws, opts);
+}
+
+
 function applyStatsReportDesign(ws, opts) {
   var totalRow = opts.totalRow;
   var tpnRow = opts.tpnRow;
   var lastDataRow = opts.lastDataRow;
+  var footerRow = opts.footerRow;
   var lastCol = 12;
   var thin = { style: 'thin', color: { rgb: '000000' } };
   var medium = { style: 'medium', color: { rgb: '000000' } };
-  var none = { style: 'thin', color: { rgb: 'FFFFFF' } };
-  var headerFill = { patternType: 'solid', fgColor: { rgb: '1F497D' } };
-  var totalFill = { patternType: 'solid', fgColor: { rgb: 'D8D8D8' } };
+  var headerFill = { patternType: 'solid', fgColor: { rgb: 'FFEEECE1' } };
+  var totalFill = { patternType: 'solid', fgColor: { rgb: 'FFD9D9D9' } };
   var fontTitle = { name: '맑은 고딕', sz: 14, bold: true };
   var fontDrug = { name: '맑은 고딕', sz: 10 };
   var fontData = { name: '맑은 고딕', sz: 11 };
   var alignCenter = { horizontal: 'center', vertical: 'center' };
+  var lastRow = (footerRow != null) ? footerRow : tpnRow;
 
   function ensureCell(r, c) {
     var addr = XLSX.utils.encode_cell({ r: r, c: c });
-    if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+    if (!ws[addr]) ws[addr] = { t: 'z', s: {} };
     if (!ws[addr].s) ws[addr].s = {};
     return ws[addr];
   }
 
-  for (var R = 0; R <= tpnRow; R++) {
+  function tableBorder(R, C) {
+    var top = thin, bottom = thin, left = thin, right = thin;
+    if (C === 0) { left = medium; right = medium; }
+    if (C === lastCol) { left = medium; right = medium; }
+    if (R === 0) {
+      top = medium;
+      if (C === 0) left = medium;
+      if (C === lastCol) right = medium;
+    } else if (R === 1) {
+      top = medium;
+    } else if (R === totalRow) {
+      top = (C === lastCol) ? thin : medium;
+    } else if (R === tpnRow) {
+      bottom = medium;
+    }
+    return { top: top, bottom: bottom, left: left, right: right };
+  }
+
+  for (var R = 0; R <= lastRow; R++) {
     for (var C = 0; C <= lastCol; C++) {
       var cell = ensureCell(R, C);
-      cell.s.font = (C === 0 && R >= 2 && R < totalRow) ? fontDrug : fontData;
-      cell.s.alignment = alignCenter;
-      var top = thin, bottom = thin, left = thin, right = thin;
-      if (R === 0) {
-        cell.s.font = fontTitle;
-        top = medium; left = medium; right = medium;
-      } else if (R === 1) {
-        cell.s.fill = headerFill;
-        top = medium; bottom = thin;
-        if (C === 0) left = medium;
-        if (C === lastCol) { left = medium; right = medium; }
-      } else if (R >= 2 && R < totalRow) {
-        if (C === 0) left = medium;
-        if (C === lastCol) { cell.s.fill = headerFill; left = medium; right = medium; }
-        if (C === 11) { left = none; right = none; }
-      } else if (R === totalRow) {
-        cell.s.fill = totalFill;
-        top = medium; bottom = thin;
-        if (C === 0) left = medium;
-        if (C === lastCol) { left = medium; right = medium; }
-      } else if (R === tpnRow) {
-        bottom = medium;
-        if (C === 0) left = medium;
-        if (C === lastCol) { cell.s.fill = headerFill; left = medium; right = medium; }
-        if (C >= 1 && C <= 10) bottom = medium;
-        if (C === 11) { bottom = medium; left = none; right = none; }
+      cell.s.border = tableBorder(R, C);
+      if (R <= tpnRow) {
+        cell.s.font = (C === 0 && R >= 2 && R < totalRow) ? fontDrug : fontData;
+        cell.s.alignment = alignCenter;
+        if (R === 0) {
+          cell.s.font = fontTitle;
+        } else if (R === 1) {
+          cell.s.fill = headerFill;
+        } else if (R >= 2 && R < totalRow) {
+          if (C === lastCol) cell.s.fill = headerFill;
+        } else if (R === totalRow) {
+          if (C < lastCol) cell.s.fill = totalFill;
+          else cell.s.fill = headerFill;
+        } else if (R === tpnRow) {
+          if (C === lastCol) cell.s.fill = headerFill;
+        }
+      } else {
+        cell.s.font = fontData;
+        cell.s.alignment = (C === 0) ? { horizontal: 'left', vertical: 'center' } : alignCenter;
       }
-      cell.s.border = { top: top, bottom: bottom, left: left, right: right };
     }
   }
 
+  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: lastCol } });
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } }];
   ws['!cols'] = [{ wch: 13.125 }];
   for (var i = 1; i <= lastCol; i++) ws['!cols'].push({ wch: 8.43 });
   ws['!rows'] = [{ hpt: 36.75 }];
   ws['!rows'][lastDataRow - 1] = { hpt: 17.25 };
   ws['!rows'][tpnRow] = { hpt: 17.25 };
-  ws['!autofilter'] = { ref: 'A2:M' + (tpnRow + 1) };
+  ws['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 2, topLeftCell: 'A3', activePane: 'bottomLeft' }];
 }
 function getStatsData() {
   var mode = _statsPeriod;
@@ -1626,7 +1701,7 @@ function renderStats() {
   // 참조 양식 순서(GS→GIC→...) 또는 사용자가 저장한 순서(statsDeptOrder) 를 우선 사용
   var depts = {};
   fMix.concat(fOut).forEach(function(r){
-    var dept = getDeptCode(r.doctor);
+    var dept = getReportDeptCode(r.doctor, r.dept);
     if(!depts[dept])depts[dept]={pts:{},rx:{}};
     depts[dept].pts[getStatsPatientKey(r)]=1;
     depts[dept].rx[getStatsRxKey(r)]=1;
@@ -1645,7 +1720,7 @@ function renderStats() {
   fMix.concat(fOut).forEach(function(r){
     var cname = statsDrugDisplayName(r.name);
     if(!cname) return;
-    var dept = getDeptCode(r.doctor);
+    var dept = getReportDeptCode(r.doctor, r.dept);
     if(!drugDept[cname])drugDept[cname]={code:r.code};
     if(!drugDept[cname][dept])drugDept[cname][dept]=new Set();
     drugDept[cname][dept].add(getStatsRxKey(r));
@@ -1679,17 +1754,18 @@ function renderStats() {
   }
 
   // ── 약품별 상세 (수액 제외) ──
+  // 각 환자의 fractional vial을 개별 올림 처리 (4.63 via → 5 via, 0.37 via → 1 via)
   var drugMap = {};
   fMix.forEach(function(r){
     var cn = cleanDrugName(r.name);
     if(!drugMap[cn])drugMap[cn]={name:cn,inQty:0,outQty:0,inPts:{},outPts:{}};
-    drugMap[cn].inQty+=r.totalQty||r.dose||0;
+    drugMap[cn].inQty+=Math.ceil(r.totalQty||(r.dose||0));
     drugMap[cn].inPts[getStatsPatientKey(r)]=1;
   });
   fOut.forEach(function(r){
     var cn = cleanDrugName(r.name);
     if(!drugMap[cn])drugMap[cn]={name:cn,inQty:0,outQty:0,inPts:{},outPts:{}};
-    drugMap[cn].outQty+=r.totalQty||0;
+    drugMap[cn].outQty+=Math.ceil(r.totalQty||0);
     drugMap[cn].outPts[getStatsPatientKey(r)]=1;
   });
   var drugRows=[];
@@ -3208,17 +3284,19 @@ function renderUsage() {
   const usageMap = {}; // { code: { code, name, inpatient, outpatient } }
 
   // 입원MIX 집계 (수액/용매 제외)
+  // 각 환자의 fractional vial을 개별 올림 처리 (4.63 via → 5 via, 0.37 via → 1 via)
   state.inpatientMix.forEach(r => {
     if (isVehicle(r.code)) return;
     if (!usageMap[r.code]) usageMap[r.code] = { code:r.code, name:r.name, inpatient:0, outpatient:0 };
-    usageMap[r.code].inpatient += r.totalQty || 0;
+    usageMap[r.code].inpatient += Math.ceil(r.totalQty || 0);
   });
 
   // 외래집계 집계
+  // 각 환자의 fractional vial을 개별 올림 처리 (4.63 via → 5 via, 0.37 via → 1 via)
   state.outpatientData.forEach(r => {
     if (isVehicle(r.code)) return;
     if (!usageMap[r.code]) usageMap[r.code] = { code:r.code, name:r.name, inpatient:0, outpatient:0 };
-    usageMap[r.code].outpatient += r.totalQty || 0;
+    usageMap[r.code].outpatient += Math.ceil(r.totalQty || 0);
   });
 
   let usageData = Object.values(usageMap).map(r => ({ ...r, total: r.inpatient + r.outpatient }));
@@ -4500,16 +4578,12 @@ function exportStatsDeptExcel() {
         if (fallback) unmappedDrugs[fallback] = 1;
         return;
       }
-      var dept = getDeptCode(r.doctor);
+      var dept = getReportDeptCode(r.doctor, r.dept);
       if (!drugDept[cname]) drugDept[cname] = {};
       if (!drugDept[cname][dept]) drugDept[cname][dept] = new Set();
       drugDept[cname][dept].add(getStatsRxKey(r));
     });
 
-    var usedDepts = {};
-    Object.keys(drugDept).forEach(function(dn){
-      Object.keys(drugDept[dn]).forEach(function(d){ usedDepts[d] = 1; });
-    });
     var activeDepts = getPreferredDeptOrder();
     var label = (sd && sd.label) ? sd.label : today();
     var title = formatStatsReportTitle(label);
@@ -4517,54 +4591,92 @@ function exportStatsDeptExcel() {
     var lastDataRow = firstDataRow + DEFAULT_STATS_DRUG_ORDER.length - 1;
     var totalRowNum = lastDataRow + 1;
     var tpnRowNum = totalRowNum + 1;
+    var footerRowNum = tpnRowNum + 2;
+    var sumFirstCol = XLSX.utils.encode_col(1);
+    var sumLastCol = XLSX.utils.encode_col(activeDepts.length);
+    var outRxKeys = {};
+    fOut.forEach(function(r) { outRxKeys[getStatsRxKey(r)] = 1; });
+    var outRxCount = Object.keys(outRxKeys).length;
+
+    function fillWorksheet(ws) {
+      function setCell(addr, val, isFormula) {
+        var prev = ws[addr];
+        var prevS = prev && prev.s;
+        var cell;
+        if (isFormula) {
+          cell = { f: val, t: 'n' };
+        } else if (val === null || val === undefined || val === '') {
+          cell = { t: 'z' };
+        } else {
+          cell = { v: val, t: typeof val === 'number' ? 'n' : 's' };
+        }
+        if (prevS) cell.s = prevS;
+        ws[addr] = cell;
+      }
+
+      setCell('A1', title, false);
+      activeDepts.forEach(function(d, i) {
+        setCell(XLSX.utils.encode_col(i + 1) + '2', d, false);
+      });
+      setCell('M2', '합계', false);
+
+      DEFAULT_STATS_DRUG_ORDER.forEach(function(drug, idx) {
+        var excelRow = firstDataRow + idx;
+        setCell('A' + excelRow, drug, false);
+        activeDepts.forEach(function(d, i) {
+          var cnt = (drugDept[drug] && drugDept[drug][d]) ? drugDept[drug][d].size : 0;
+          setCell(XLSX.utils.encode_col(i + 1) + excelRow, cnt > 0 ? cnt : null, false);
+        });
+        setCell('M' + excelRow, 'SUM(' + sumFirstCol + excelRow + ':' + sumLastCol + excelRow + ')', true);
+      });
+
+      setCell('A' + totalRowNum, 'TOTAL', false);
+      activeDepts.forEach(function(d, i) {
+        var col = XLSX.utils.encode_col(i + 1);
+        setCell(col + totalRowNum, 'SUM(' + col + firstDataRow + ':' + col + lastDataRow + ')', true);
+      });
+      setCell('M' + totalRowNum, 'SUM(' + sumFirstCol + totalRowNum + ':' + sumLastCol + totalRowNum + ')', true);
+
+      setCell('A' + tpnRowNum, '특수TPN', false);
+      setCell('B' + tpnRowNum, 0, false);
+      for (var ti = 1; ti < activeDepts.length; ti++) {
+        setCell(XLSX.utils.encode_col(ti + 1) + tpnRowNum, null, false);
+      }
+      setCell('M' + tpnRowNum, 'SUM(' + sumFirstCol + tpnRowNum + ':' + sumLastCol + tpnRowNum + ')', true);
+      setCell('A' + footerRowNum, '외래주사실 :', false);
+      setCell('B' + footerRowNum, outRxCount > 0 ? (outRxCount + '건 ') : '', false);
+      applyStatsReportDesign(ws, {
+        lastDataRow: lastDataRow,
+        totalRow: totalRowNum - 1,
+        tpnRow: tpnRowNum - 1,
+        footerRow: footerRowNum - 1
+      });
+    }
 
     var aoa = [];
     aoa.push([title]);
     aoa.push([''].concat(activeDepts).concat(['합계']));
-
-    DEFAULT_STATS_DRUG_ORDER.forEach(function(drug, idx){
-      var excelRow = firstDataRow + idx;
+    DEFAULT_STATS_DRUG_ORDER.forEach(function(drug) {
       var row = [drug];
-      activeDepts.forEach(function(d){
+      activeDepts.forEach(function(d) {
         var cnt = (drugDept[drug] && drugDept[drug][d]) ? drugDept[drug][d].size : 0;
-        row.push(cnt || '');
+        row.push(cnt > 0 ? cnt : '');
       });
       row.push(null);
       aoa.push(row);
     });
-
     aoa.push(['TOTAL'].concat(new Array(activeDepts.length).fill(null)).concat([null]));
-    aoa.push(['특수TPN', '0건'].concat(new Array(activeDepts.length - 1).fill('')).concat([null]));
-    aoa.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
-    aoa.push(['외래주사실 :', '', '', '', '', '', '', '', '', '', '', '', '']);
-
+    aoa.push(['특수TPN', 0].concat(new Array(activeDepts.length - 1).fill('')).concat([null]));
+    aoa.push(new Array(activeDepts.length + 2).fill(''));
+    aoa.push(['외래주사실 :', ''].concat(new Array(activeDepts.length).fill('')));
     var wb = XLSX.utils.book_new();
     var ws = XLSX.utils.aoa_to_sheet(aoa);
-
-    DEFAULT_STATS_DRUG_ORDER.forEach(function(drug, idx){
-      var excelRow = firstDataRow + idx;
-      ws['M' + excelRow] = { f: 'SUM(B' + excelRow + ':K' + excelRow + ')', t: 'n' };
-    });
-
-    activeDepts.forEach(function(d, i){
-      var col = XLSX.utils.encode_col(i + 1);
-      ws[col + totalRowNum] = { f: 'SUM(' + col + firstDataRow + ':' + col + lastDataRow + ')', t: 'n' };
-    });
-    ws['M' + totalRowNum] = { f: 'SUM(B' + totalRowNum + ':K' + totalRowNum + ')', t: 'n' };
-    ws['M' + tpnRowNum] = { f: 'SUM(B' + tpnRowNum + ':K' + tpnRowNum + ')', t: 'n' };
-
-    applyStatsReportDesign(ws, {
-      lastDataRow: lastDataRow,
-      totalRow: totalRowNum - 1,
-      tpnRow: tpnRowNum - 1
-    });
-
+    fillWorksheet(ws);
     XLSX.utils.book_append_sheet(wb, ws, '항암제');
-    XLSX.writeFile(wb, formatStatsReportFilename(label));
-
+    XLSX.writeFile(wb, formatStatsReportFilename(label), { cellStyles: true });
     if (Object.keys(unmappedDrugs).length > 0) {
       console.warn('exportStatsDeptExcel: unmapped drugs (not in 60-row template):', Object.keys(unmappedDrugs).sort());
-      var um = '매핑되지 않은 약품 ' + Object.keys(unmappedDrugs).length + '개는 엑셀에서 제외됨 (F12 콘솔 확인)';
+      var um = '보고용 양식 60개 약품 외 ' + Object.keys(unmappedDrugs).length + '개는 엑셀 행에 없음 (화면 통계에는 포함)';
       if (typeof toast === 'function') toast(um, 'warning');
     }
     if (typeof toast === 'function') toast('보고용 양식 엑셀 다운로드 완료', 'success');

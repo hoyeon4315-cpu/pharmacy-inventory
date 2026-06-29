@@ -1218,10 +1218,10 @@ function getStatsRxKey(row) {
 
 // ── 항암제 일별 통계 빌드 (AI 분석용) ──
 function getRxBundleKey(row){
-  if(!row) return String.fromCharCode(63,124,63);
+  if(!row) return '?|?';
   var pk=getStatsPatientKey(row);
   var bundle=String(row.bundleNo||String()).trim();
-  if(bundle) return pk+String.fromCharCode(124)+bundle;
+  if(bundle) return pk+'|'+bundle;
   return getStatsRxKey(row);
 }
 

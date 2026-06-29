@@ -4,9 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>재고관리 시스템</title>
+<meta name="theme-color" content="#f07a00">
+<link rel="manifest" href="/site.webmanifest?v=20260626-2">
+<link rel="icon" type="image/png" sizes="192x192" href="/app-icon-192.png?v=20260626-1">
+<link rel="icon" type="image/png" sizes="512x512" href="/app-icon-512.png?v=20260626-1">
+<link rel="icon" type="image/x-icon" href="/favicon.ico?v=20260626-1">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=20260626-3">
+<link rel="shortcut icon" href="/favicon.ico?v=20260626-1">
+<link rel="apple-touch-icon" href="/app-icon-192.png?v=20260626-1">
 <script src="https://cdn.jsdelivr.net/npm/codepage@1.15.0/dist/cpexcel.full.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<script>if(typeof cptable!=='undefined'&&typeof XLSX!=='undefined'){XLSX.utils.set_cptable(cptable);}</script>
+<script>if(typeof cptable!=='undefined'&&typeof XLSX!=='undefined'&&XLSX.utils&&typeof XLSX.utils.set_cptable==='function'){XLSX.utils.set_cptable(cptable);}</script>
 <style>
 :root { --primary:#2563eb; --primary-dark:#1e40af; --accent:#0ea5e9; --bg:#f1f5f9; --card:#fff; --text:#1e293b; --text-muted:#64748b; --border:#e2e8f0; --success:#22c55e; --danger:#ef4444; --warning:#f59e0b; --radius:8px; }
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -109,7 +117,6 @@ input:focus,select:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 
 .toast-success { background:#22c55e; }
 .toast-error { background:#ef4444; }
 .toast-info { background:#3b82f6; }
-.toast-warning { background:#78716c; }
 @keyframes slideIn { from{transform:translateX(100px);opacity:0} to{transform:translateX(0);opacity:1} }
 /* AI 챗봇 */
 .ai-fab { position:fixed !important; bottom:20px !important; right:20px !important; width:52px; height:52px; border-radius:50%; background:linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; border:none; cursor:pointer; box-shadow:0 4px 15px rgba(79,70,229,.4); z-index:99999 !important; display:flex; align-items:center; justify-content:center; transition:transform .2s,box-shadow .2s; }
@@ -317,6 +324,12 @@ body.general-mode .text-blue { color:#16a34a; }
 #tab-stats .stats-bordered th { background:#f1f5f9; font-weight:700; color:#334155; }
 #tab-stats .stats-bordered tr:hover { background:#f8fafc; }
 #tab-stats .stats-bordered .total-row { font-weight:700; background:#e2e8f0 !important; }
+/* 일자 구분 (total 행 하단) */
+#tab-stats .stats-bordered .day-sep td, #tab-stats .stats-bordered .day-sep th { border-bottom:2px solid #475569 !important; }
+/* 입원↔외래 그룹 경계 (입원조제건수 우측) */
+#tab-stats .stats-bordered .col-sep-group { border-right:2px solid #475569 !important; }
+/* 헤더 경계도 동일 */
+#tab-stats .stats-bordered th.col-sep-group { border-right:2px solid #475569 !important; }
 @media print {
   .stats-print-target { position:fixed; top:0; left:0; width:100%; z-index:99999; background:#fff; }
   .stats-print-hide { display:none !important; }
@@ -542,36 +555,32 @@ body.general-mode .text-blue { color:#16a34a; }
     <!-- 요약 카드 -->
     <div class="grid-4" id="statsSummaryCards" style="margin-bottom:16px;"></div>
     <!-- 통계 뷰 토글 버튼 -->
-    <div style="display:flex;gap:8px;margin-bottom:12px;" id="statsViewToggle">
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;" id="statsViewToggle">
       <button class="stats-toggle-btn active" onclick="toggleStatsView('dept')">진료과별 통계</button>
       <button class="stats-toggle-btn" onclick="toggleStatsView('ampm')">조제통계 (오전/오후)</button>
-      <button class="stats-print-btn" onclick="exportStatsDeptExcel()" style="margin-left:12px;">엑셀 다운로드 (보고용 양식)</button>
+      <button class="stats-print-btn" onclick="exportStatsDeptExcel()" style="margin-left:12px;background:#0ea5e9;color:white;border-color:#0ea5e9;">엑셀 다운로드 (보고용 양식)</button>
     </div>
-    <div style="font-size:11px;color:#64748b;margin-bottom:8px;">※ 위 엑셀 버튼은 항상 클릭 가능합니다. (참조 파일의 진료과 컬럼 순서 GS→GIC→... 로 생성)</div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:8px;">※ 보고용 양식(GS→GIC→IMH…)으로 다운로드. 진료과 순서는 아래 편집 설정이 반영됩니다.</div>
     <!-- 진료과별 통계 섹션 -->
     <div id="statsViewDept">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
         <h4 style="font-size:13px;font-weight:700;color:#334155;margin:0;">약품별 x 진료과 매트릭스 (처방건수)</h4>
-        <span>
-          <button class="stats-print-btn" onclick="printStatsSection('dept')">[Print] 진료과별</button>
-        </span>
+        <button class="stats-print-btn" onclick="printStatsSection('dept')">[Print] 진료과별</button>
       </div>
       <div id="statsChemoMatrix" style="margin-bottom:12px;"></div>
       <div style="margin-bottom:12px;" id="statsDetailGrid">
         <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">진료과별 요약</h4>
         <div id="statsDoctorTable"></div>
-        <!-- 진료과 순서 편집 패널 (이미 등록된 dailyData 에도 위치 변경만으로 적용) -->
-        <div id="deptReorderPanel" style="display:none; margin-top:6px; padding:6px 8px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px; font-size:12px;">
-          <div style="font-weight:600; margin-bottom:3px; color:#334155;">진료과 순서 편집 (현재 기간의 활성 진료과)</div>
+        <div id="deptReorderPanel" style="display:none;margin-top:6px;padding:6px 8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+          <div style="font-weight:600;margin-bottom:3px;color:#334155;">진료과 순서 편집 (보고용 엑셀 컬럼 순서)</div>
           <div id="deptReorderList" style="line-height:1.4;"></div>
-          <div style="margin-top:4px; display:flex; gap:6px;">
-            <button onclick="saveDeptOrderEdit()" class="stats-print-btn" style="font-size:11px;">이 순서 저장 (모든 기간 적용)</button>
+          <div style="margin-top:4px;display:flex;gap:6px;">
+            <button onclick="saveDeptOrderEdit()" class="stats-print-btn" style="font-size:11px;">이 순서 저장</button>
             <button onclick="cancelDeptOrderEdit()" class="stats-print-btn" style="font-size:11px;">취소</button>
           </div>
         </div>
         <div style="margin-top:4px;">
           <button onclick="startDeptOrderEdit()" class="stats-print-btn" style="font-size:11px;">진료과 순서 편집</button>
-          <span style="font-size:11px;color:#64748b; margin-left:6px;">저장하면 과거/미래 모든 통계 뷰에 동일 순서 적용 (재업로드 불필요)</span>
         </div>
       </div>
       <h4 style="font-size:13px;font-weight:700;margin-bottom:6px;color:#334155;">약품별 사용량</h4>
@@ -618,13 +627,28 @@ body.general-mode .text-blue { color:#16a34a; }
           <th class="sortable" data-table="forecast" data-key="periodTotal" style="text-align:right">기간총사용량</th>
           <th class="sortable" data-table="forecast" data-key="dailyAvg" style="text-align:right">하루평균</th>
           <th class="sortable" data-table="forecast" data-key="monthlyAvg" style="text-align:right">월평균</th>
+          <th class="sortable" data-table="forecast" data-key="systemStock" style="text-align:right;background:#f1f5f9;">전산재고</th>
           <th class="sortable" data-table="forecast" data-key="currentStock" style="text-align:right;background:#fefce8;font-weight:700;">실재고</th>
           <th class="sortable" data-table="forecast" data-key="queryNeed" style="text-align:right">조회기간필요</th>
-          <th class="sortable" data-table="forecast" data-key="diff" style="text-align:right">과부족</th>
+          <th class="sortable" data-table="forecast" data-key="diffSystem" style="text-align:right">과부족(전산)</th>
+          <th class="sortable" data-table="forecast" data-key="diff" style="text-align:right">과부족(실재고)</th>
           <th>상태</th>
           <th style="text-align:right">발주수량</th>
+          <th style="width:40px;"></th>
         </tr></thead>
         <tbody id="forecastBody"></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card" id="forecastHiddenCard" style="display:none;">
+    <div class="flex-between mb-8">
+      <h3 style="border:none;padding:0;margin:0;">숨긴 약품</h3>
+      <button class="btn btn-secondary btn-sm" onclick="unhideAllDrugs();renderForecast();">전체 보이기</button>
+    </div>
+    <div class="table-wrap" style="max-height:250px;">
+      <table>
+        <thead><tr><th>약품코드</th><th>약품명</th><th style="text-align:center">복원</th></tr></thead>
+        <tbody id="forecastHiddenBody"></tbody>
       </table>
     </div>
   </div>
@@ -660,7 +684,7 @@ body.general-mode .text-blue { color:#16a34a; }
         <input type="number" id="zDayEnd" min="1" max="30" value="1" style="width:50px;" title="연속일 경우 마지막 Day">
         <input type="text" id="zDayPick" placeholder="예: 1,2,8" style="width:90px;display:none;" title="쉼표로 Day 번호 입력">
       </div>
-      <label style="font-size:13px;font-weight:600;text-align:right;white-space:nowrap;">마지막투여일</label>
+      <label style="font-size:13px;font-weight:600;text-align:right;white-space:nowrap;">투여시작일(D1)</label>
       <input type="date" id="zLastDate">
       <div></div>
       <div><button class="btn btn-primary" onclick="addZeroDrug()" style="width:100%;">등록</button></div>
@@ -691,7 +715,7 @@ body.general-mode .text-blue { color:#16a34a; }
       </div>
     </div>
     <div class="news-toolbar" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
-      <input type="text" id="newsSearch" placeholder="검색 (약품명, 제목, 내용)" oninput="applyNewsFilters()"
+      <input type="text" id="newsSearch" placeholder="검색 (약품명, 제목, 내용)" oninput="debouncedNewsFilter()"
         style="flex:1;min-width:160px;font-size:12px;padding:6px 8px;border:1px solid #cbd5e1;background:#fff;color:#1e293b;border-radius:4px;">
       <div style="display:flex;gap:2px;">
         <button class="btn btn-sm news-scope-btn" data-scope="all" onclick="setNewsScope('all')"
@@ -801,6 +825,18 @@ body.general-mode .text-blue { color:#16a34a; }
       </table>
     </div>
   </div>
+  <!-- 진료과/처방의 매핑 관리 -->
+  <div class="card admin-only">
+    <h3>진료과 / 처방의 관리</h3>
+    <p style="font-size:12px;color:#64748b;margin-bottom:10px;">통계에서 처방의를 진료과로 매핑할 때 사용됩니다. 매핑 안 된 의사는 "기타"로 분류됩니다.</p>
+    <div class="form-row" style="margin-bottom:10px;">
+      <input type="text" id="newDeptCode" placeholder="진료과 코드 (예: DM)" style="width:150px;text-transform:uppercase;">
+      <input type="text" id="newDeptName" placeholder="진료과명 (예: 당뇨내과)" style="width:200px;">
+      <button class="btn btn-success btn-sm" onclick="addCustomDept()">진료과 추가</button>
+      <button class="btn btn-sm" style="background:#7c3aed;color:#fff;" onclick="debugOutpatientTime()">외래 시간 진단</button>
+    </div>
+    <div id="deptDoctorList"></div>
+  </div>
   <!-- 공급뉴스 API 키 관리 (설정 탭 내부) -->
   <div class="card admin-only">
     <h3>공급뉴스 API 키 관리 (data.go.kr)</h3>
@@ -909,8 +945,37 @@ const BUILTIN_DRUGS = [
 {code:'XLASPAR1',name:'L-Asparaginase inj'}
 ];
 
+const DEFAULT_STATS_DEPT_ORDER = ['GS','GIC','IMH','IMR','OG','IMJ','UR','NR','OR','IMN','기타'];
+const DEFAULT_STATS_DRUG_ORDER = [
+  '5-FU','Abraxane','Alimta','Babencio','Bencord','Bleomycin','Caelyx','Campto','Camtobell',
+  'Carboplatin','Cisplan','Cyramza','Cytarabine','Dacogen','Dazalex','Ditaxel','Doxorubin',
+  'Endoxan','Enhertu','EPS','Erbitux','Gazyva','Gemzar','Halaven','Herceptin SC','Herzuma',
+  'Holoxan','Imfinzi','Jemperli','Keytruda','Kyprolis','Mabthera','Mabthera SC',
+  'Methotrexate(5g)','Mitomycin-C','Mitron','MTX','Navelbine','Onbevzy','Onivyde','Opdivo',
+  'Oxalitin','Padexol','Perjeta','Samfenet','Sylvant','Taxol 30mg','Tecentriq','Tevimbra',
+  'Topocan','Trisenox','Trodelvy','Velbastine','Velcade','Vincristine','Vyloy','Yervoy',
+  'Zaltrap','Zavedos','Zepzelca'
+];
+const STATS_DRUG_ALIASES = {
+  'Cisplatin':'Cisplan','Doxorubicin':'Doxorubin','Docetaxel':'Ditaxel','Oxaliplatin':'Oxalitin',
+  'Paclitaxel(albumin)':'Abraxane','Pemetrexed':'Alimta','Bevacizumab':'Onbevzy','Irinotecan':'Campto',
+  'Gemcitabine':'Gemzar','Trastuzumab':'Mabthera','Pembrolizumab':'Keytruda','Nivolumab':'Opdivo',
+  'Atezolizumab':'Tecentriq','Durvalumab':'Imfinzi','Cetuximab':'Erbitux','Rituximab':'Mabthera',
+  'Vincristine sulfate':'Vincristine','Vincristine sulfate Inj':'Vincristine','Cyclophosphamide':'Endoxan',
+  'Etoposide':'EPS','Carboplatin inj':'Carboplatin','Camtobell inj':'Camtobell','Doxorubin inj':'Doxorubin',
+  'Endoxan inj':'Endoxan','EPS inj':'EPS','EPS  inj':'EPS','Enhertu inj':'Enhertu',
+  'Oxalitin inj':'Oxalitin','Oxalitin  inj':'Oxalitin','Padexol inj':'Padexol','Perjeta inj':'Perjeta',
+  'Samfenet inj':'Samfenet','Cisplan inj':'Cisplan',
+  'Methotrexate':'Methotrexate(5g)','Taxol':'Taxol 30mg','Paclitaxel':'Taxol 30mg',
+  '5-fu':'5-FU','5-Fu':'5-FU','Herceptin sc':'Herceptin SC','Mabthera sc':'Mabthera SC'
+};
+const REPORT_DEPT_FALLBACK = {
+  'OS':'OR','CV':'기타','TS':'기타','NS':'기타','IME':'기타','IMI':'기타',
+  'RH':'기타','OT':'기타','PD':'기타','HOSPICE':'기타','Hospice':'기타'
+};
+
 // 처방의 → 진료과 코드 매핑 (PDF: 2026년 4월 진료과 교수별 담당 전담간호사)
-const DOCTOR_DEPT_MAP = {
+const BUILTIN_DOCTOR_DEPT_MAP = {
   // IMR (호흡기내과)
   '정윤정':'IMR','김병기':'IMR','조수민':'IMR','유영미':'IMR','이무용':'IMR','박종선':'IMR',
   // CV (심혈관내과)
@@ -949,38 +1014,7 @@ const DOCTOR_DEPT_MAP = {
   // 소아청소년과
   '정석호':'PD',
   // 호스피스
-  '오희근':'Hospice',
-};
-
-// 통계 탭 진료과 표시 순서 (참조: 항암제 TPN 조제통계 보고용 양식 - GS, GIC, IMH, IMR... 순)
-// 이 순서를 기본으로 사용. state.statsDeptOrder 로 사용자 지정/저장 가능 (이미 등록된 dailyData 에도 적용)
-const DEFAULT_STATS_DEPT_ORDER = ['GS','GIC','IMH','IMR','OG','IMJ','UR','NR','OR','IMN','기타'];
-const DEFAULT_STATS_DRUG_ORDER = [
-  '5-FU','Abraxane','Alimta','Babencio','Bencord','Bleomycin','Caelyx','Campto','Camtobell',
-  'Carboplatin','Cisplan','Cyramza','Cytarabine','Dacogen','Dazalex','Ditaxel','Doxorubin',
-  'Endoxan','Enhertu','EPS','Erbitux','Gazyva','Gemzar','Halaven','Herceptin SC','Herzuma',
-  'Holoxan','Imfinzi','Jemperli','Keytruda','Kyprolis','Mabthera','Mabthera SC',
-  'Methotrexate(5g)','Mitomycin-C','Mitron','MTX','Navelbine','Onbevzy','Onivyde','Opdivo',
-  'Oxalitin','Padexol','Perjeta','Samfenet','Sylvant','Taxol 30mg','Tecentriq','Tevimbra',
-  'Topocan','Trisenox','Trodelvy','Velbastine','Velcade','Vincristine','Vyloy','Yervoy',
-  'Zaltrap','Zavedos','Zepzelca'
-];
-const STATS_DRUG_ALIASES = {
-  'Cisplatin':'Cisplan','Doxorubicin':'Doxorubin','Docetaxel':'Ditaxel','Oxaliplatin':'Oxalitin',
-  'Paclitaxel(albumin)':'Abraxane','Pemetrexed':'Alimta','Bevacizumab':'Onbevzy','Irinotecan':'Campto',
-  'Gemcitabine':'Gemzar','Trastuzumab':'Mabthera','Pembrolizumab':'Keytruda','Nivolumab':'Opdivo',
-  'Atezolizumab':'Tecentriq','Durvalumab':'Imfinzi','Cetuximab':'Erbitux','Rituximab':'Mabthera',
-  'Vincristine sulfate':'Vincristine','Vincristine sulfate Inj':'Vincristine','Cyclophosphamide':'Endoxan',
-  'Etoposide':'EPS','Carboplatin inj':'Carboplatin','Camtobell inj':'Camtobell','Doxorubin inj':'Doxorubin',
-  'Endoxan inj':'Endoxan','EPS inj':'EPS','EPS  inj':'EPS','Enhertu inj':'Enhertu',
-  'Oxalitin inj':'Oxalitin','Oxalitin  inj':'Oxalitin','Padexol inj':'Padexol','Perjeta inj':'Perjeta',
-  'Samfenet inj':'Samfenet','Cisplan inj':'Cisplan',
-  'Methotrexate':'Methotrexate(5g)','Taxol':'Taxol 30mg','Paclitaxel':'Taxol 30mg',
-  '5-fu':'5-FU','5-Fu':'5-FU','Herceptin sc':'Herceptin SC','Mabthera sc':'Mabthera SC'
-};
-const REPORT_DEPT_FALLBACK = {
-  'OS':'OR','CV':'기타','TS':'기타','NS':'기타','IME':'기타','IMI':'기타',
-  'RH':'기타','OT':'기타','PD':'기타','HOSPICE':'기타','Hospice':'기타'
+  '오희근':'HOSPICE',
 };
 
 // 항암제 코드 → 성분명(INN) 매핑
@@ -1111,6 +1145,11 @@ async function enterApp() {
     state.drugMaster = BUILTIN_DRUGS.map(d => ({ code: d.code, name: d.name }));
   }
   init();
+  // 통계 집계 백필: 기존 dailyData(최근 40일)로부터 AM/PM 집계를 재계산해 D1에 업로드
+  // (외래 receiptTime/ampm 신규 추가 등 집계 함수 업데이트 시 자동 반영)
+  if (appMode === 'admin' && authToken && state.dailyData && Object.keys(state.dailyData).length > 0) {
+    setTimeout(function() { saveToD1(); }, 500);
+  }
 }
 
 async function loadFromD1() {
@@ -1126,6 +1165,11 @@ async function loadFromD1() {
         state.dailyData = JSON.parse(result.daily_data);
       }
     }
+
+    // 제로관리약 마이그레이션: 진행 중 주기의 지난 Day 자동 완료
+    try { migrateZeroDrugDonedays(); } catch(e) { console.warn('zero migration:', e); }
+    // 주기 종료일이 지난 완료 cycle 들을 자동으로 다음 주기로 이동
+    try { if (autoAdvanceAllCycles()) saveState(); } catch(e) { console.warn('zero auto-advance:', e); }
 
     // 반대편 마스터도 로드 (뉴스 원내/원외 매칭용)
     await loadOtherMaster();
@@ -1158,7 +1202,56 @@ async function loadOtherMaster() {
   } catch(e) { /* 무시 - 뉴스 매칭만 영향 */ }
 }
 
+function getStatsPatientKey(row) {
+  if (!row) return '?';
+  var regNo = String(row.regNo || '').trim();
+  if (regNo) return regNo;
+  var patient = String(row.patient || '').trim();
+  if (patient) return patient;
+  return '?';
+}
+function getStatsRxKey(row) {
+  if (!row) return '?|?';
+  var rxUnit = (typeof cleanDrugName === 'function' ? cleanDrugName(row.name || '') : '') || String(row.code || '?').trim();
+  return getStatsPatientKey(row) + '|' + rxUnit;
+}
+
 // ── 항암제 일별 통계 빌드 (AI 분석용) ──
+function getRxBundleKey(row){
+  if(!row) return String.fromCharCode(63,124,63);
+  var pk=getStatsPatientKey(row);
+  var bundle=String(row.bundleNo||String()).trim();
+  if(bundle) return pk+String.fromCharCode(124)+bundle;
+  return getStatsRxKey(row);
+}
+
+function getPatientKey(row) {
+  return String(row.regNo || row.patient || '').trim();
+}
+
+function roundChargeableVials(qty) {
+  var value = Number(qty) || 0;
+  return value > 0 ? Math.ceil(value) : 0;
+}
+
+function getSessionBucket(row) {
+  var bucket = String(row.ampm || row.category || '').trim();
+  if (bucket === 'AM' || bucket === '오전') return 'AM';
+  if (bucket === 'PM' || bucket === '오후') return 'PM';
+  return '';
+}
+
+function countSessionPatients(rows) {
+  var patients = {};
+  rows.forEach(function(row) {
+    var key = getPatientKey(row);
+    if (!key) return;
+    var bucket = getSessionBucket(row);
+    patients[key + (bucket ? '|' + bucket : '')] = 1;
+  });
+  return Object.keys(patients).length;
+}
+
 function buildChemoStats(date) {
   if (appDataType !== 'chemo') return null;
   var mix = state.inpatientMix || [];
@@ -1167,12 +1260,11 @@ function buildChemoStats(date) {
 
   // 환자 수 (이름 또는 등록번호 기준)
   var inPtsSet = {};
-  mix.forEach(function(r) { var k = r.patient || r.regNo; if (k) inPtsSet[k] = 1; });
+  mix.forEach(function(r) { var k = getStatsPatientKey(r); if (k) inPtsSet[k] = 1; });
+  var inPtsCnt = Object.keys(inPtsSet).length;
   var outPtsSet = {};
-  out.forEach(function(r) { var k = r.patient || r.regNo; if (k) outPtsSet[k] = 1; });
-  var allPtsSet = {};
-  Object.keys(inPtsSet).forEach(function(k) { allPtsSet[k] = 1; });
-  Object.keys(outPtsSet).forEach(function(k) { allPtsSet[k] = 1; });
+  out.forEach(function(r) { var k = getStatsPatientKey(r); if (k) outPtsSet[k] = 1; });
+  var outPtsCnt = Object.keys(outPtsSet).length;
 
   // 카테고리별 건수 (긴급/정규/추가1/추가2)
   var cats = {};
@@ -1183,9 +1275,9 @@ function buildChemoStats(date) {
   mix.forEach(function(r) {
     if (!r.doctor) return;
     if (!docMap[r.doctor]) docMap[r.doctor] = { rx: {}, pts: {} };
-    var pk = r.patient || r.regNo || '?';
+    var pk = getStatsPatientKey(r);
     docMap[r.doctor].pts[pk] = 1;
-    docMap[r.doctor].rx[pk + '|' + r.code] = 1;
+    docMap[r.doctor].rx[getRxBundleKey(r)] = 1;
   });
   var doctors = {};
   Object.keys(docMap).forEach(function(d) {
@@ -1193,18 +1285,17 @@ function buildChemoStats(date) {
   });
 
   // 약품별 사용량
-  // 각 환자의 fractional vial을 개별 올림 처리 (4.63 via → 5 via, 0.37 via → 1 via)
   var drugMap = {};
   mix.forEach(function(r) {
     if (!drugMap[r.code]) drugMap[r.code] = { n: r.name, iQ: 0, oQ: 0, pts: {} };
-    drugMap[r.code].iQ += Math.ceil(r.totalQty || (r.dose || 0));
-    var pk = r.patient || r.regNo;
+    drugMap[r.code].iQ += roundChargeableVials(r.totalQty || r.dose || 0);
+    var pk = getStatsPatientKey(r);
     if (pk) drugMap[r.code].pts[pk] = 1;
   });
   out.forEach(function(r) {
     if (!drugMap[r.code]) drugMap[r.code] = { n: r.name, iQ: 0, oQ: 0, pts: {} };
-    drugMap[r.code].oQ += Math.ceil(r.totalQty || 0);
-    var pk = r.patient || r.regNo;
+    drugMap[r.code].oQ += roundChargeableVials(getOutpatientDailyQty(r));
+    var pk = getStatsPatientKey(r);
     if (pk) drugMap[r.code].pts[pk] = 1;
   });
   var drugs = [];
@@ -1221,9 +1312,9 @@ function buildChemoStats(date) {
 
   // 처방건수 = unique (환자, 약품코드) 조합 (같은 환자의 같은 약 여러 행은 1건)
   var inRxSet = {};
-  mix.forEach(function(r) { var pk = (r.patient||r.regNo||'?') + '|' + r.code; inRxSet[pk] = 1; });
+  mix.forEach(function(r) { inRxSet[getRxBundleKey(r)] = 1; });
   var outRxSet = {};
-  out.forEach(function(r) { var pk = (r.patient||r.regNo||'?') + '|' + r.code; outRxSet[pk] = 1; });
+  out.forEach(function(r) { outRxSet[getRxBundleKey(r)] = 1; });
   // 약품건수 = unique 약품코드
   var inDrugSet = {};
   mix.forEach(function(r) { inDrugSet[r.code] = 1; });
@@ -1235,9 +1326,9 @@ function buildChemoStats(date) {
 
   return {
     d: date,
-    inPts: Object.keys(inPtsSet).length,
-    outPts: Object.keys(outPtsSet).length,
-    totalPts: Object.keys(allPtsSet).length,
+    inPts: inPtsCnt,
+    outPts: outPtsCnt,
+    totalPts: inPtsCnt + outPtsCnt,
     inRx: Object.keys(inRxSet).length,
     outRx: Object.keys(outRxSet).length,
     totalRx: Object.keys(inRxSet).length + Object.keys(outRxSet).length,
@@ -1250,35 +1341,82 @@ function buildChemoStats(date) {
   };
 }
 
-function getStatsPatientKey(row) {
-  if (!row) return '?';
-  var patient = String(row.patient || '').trim();
-  if (patient) return patient;
-  var regNo = String(row.regNo || '').trim();
-  if (regNo) return regNo;
-  return '?';
-}
-function getStatsRxKey(row) {
-  if (!row) return '?|?';
-  var rxUnit = cleanDrugName(row.name || '') || String(row.code || '?').trim();
-  return getStatsPatientKey(row) + '|' + rxUnit;
-}
-
 // ── 통계 탭 렌더링 (항암제 전용) ──
-function getDeptCode(doctor) {
-  if (!doctor) return '기타';
-  return DOCTOR_DEPT_MAP[doctor.trim()] || '기타';
+// 진료과 코드/한글명 → 표준 코드 매핑
+const DEPT_NORMALIZE = {
+  '호흡기내과':'IMR','호흡기':'IMR','호흡기내과분과':'IMR',
+  '심혈관내과':'CV','심혈관':'CV','심장내과':'CV','순환기내과':'CV',
+  '혈액종양내과':'IMH','혈액종양':'IMH','혈종내':'IMH','혈액종양내과분과':'IMH','종양내과':'IMH',
+  '소화기병센터':'GIC','소화기내과':'GIC','소화기':'GIC',
+  '신장내과':'IMN','신장':'IMN','신장내과분과':'IMN',
+  '내분비내과':'IME','내분비':'IME',
+  '감염내과':'IMI','감염':'IMI',
+  '류마티스내과':'IMJ','류마티스':'IMJ',
+  '흉부외과':'TS',
+  '신경외과':'NS',
+  '산부인과':'OG',
+  '외과':'GS','일반외과':'GS',
+  '비뇨의학과':'UR','비뇨기과':'UR',
+  '정형외과':'OS',
+  '이비인후과':'OT',
+  '신경과':'NR',
+  '재활의학과':'RH','재활':'RH',
+  '소아청소년과':'PD','소아과':'PD',
+  '호스피스':'HOSPICE',
+};
+// 표준 진료과 코드 → 한글명
+const BUILTIN_DEPT_NAMES = {
+  'IMR':'호흡기내과','CV':'심혈관내과','IMH':'혈액종양내과','GIC':'소화기병센터',
+  'IMN':'신장내과','IME':'내분비내과','IMI':'감염내과','IMJ':'류마티스내과',
+  'TS':'흉부외과','NS':'신경외과','OG':'산부인과','GS':'외과','UR':'비뇨의학과',
+  'OS':'정형외과','OT':'이비인후과','NR':'신경과','RH':'재활의학과',
+  'PD':'소아청소년과','HOSPICE':'호스피스'
+};
+function getActiveDoctorDeptMap() {
+  if (state.doctorDeptMap && Object.keys(state.doctorDeptMap).length > 0) return state.doctorDeptMap;
+  return BUILTIN_DOCTOR_DEPT_MAP;
+}
+function getAllDeptList() {
+  // 표준 + 커스텀 병합
+  var list = Object.keys(BUILTIN_DEPT_NAMES).map(function(c){ return {code:c, name:BUILTIN_DEPT_NAMES[c], builtin:true}; });
+  (state.customDepts||[]).forEach(function(d){
+    if (!list.some(function(x){ return x.code === d.code; })) list.push({code:d.code, name:d.name, builtin:false});
+  });
+  return list;
+}
+function getDeptCode(doctor, deptFallback) {
+  var map = getActiveDoctorDeptMap();
+  if (doctor && doctor.trim()) {
+    var mapped = map[doctor.trim()];
+    if (mapped) return mapped;
+  }
+  if (deptFallback && deptFallback.trim()) {
+    var raw = deptFallback.trim();
+    var upper = raw.toUpperCase();
+    // 표준 코드 목록에 이미 있으면 그대로
+    var stdCodes = ['IMR','CV','IMH','GIC','IMN','IME','IMI','IMJ','TS','NS','OG','GS','UR','OS','OT','NR','RH','PD','HOSPICE'];
+    if (stdCodes.indexOf(upper) >= 0) return upper;
+    // 한글명/변형 매핑
+    if (DEPT_NORMALIZE[raw]) return DEPT_NORMALIZE[raw];
+    return upper;
+  }
+  return '기타';
 }
 function getIngredient(code) {
   return CODE_TO_INGREDIENT[code] || '';
 }
-
 // ── 통계 진료과 순서 헬퍼 (참조 양식 순서 + 사용자 저장 순서 지원) ──
 function getPreferredDeptOrder() {
-  if (state && state.statsDeptOrder && state.statsDeptOrder.length > 0) {
-    return state.statsDeptOrder.slice();
-  }
-  return DEFAULT_STATS_DEPT_ORDER.slice();
+  // 핵심 순서(GS→GIC→IMH...)는 항상 우선 유지하고,
+  // 사용자 저장 순서에서는 기본 목록에 없는 추가 진료과만 뒤에 붙인다.
+  const base = DEFAULT_STATS_DEPT_ORDER.slice();
+  const saved = (state && state.statsDeptOrder && state.statsDeptOrder.length > 0)
+    ? state.statsDeptOrder
+    : [];
+  saved.forEach(function(d) {
+    if (base.indexOf(d) < 0) base.push(d);
+  });
+  return base;
 }
 function getOrderedDepts(used, preferred) {
   const usedArr = Array.isArray(used) ? used : Object.keys(used || {});
@@ -1306,11 +1444,6 @@ function getOrderedDepts(used, preferred) {
     result.push('기타');
   }
   return result;
-}
-function getReportDeptCode(doctor, deptFallback) {
-  var code = getDeptCode(doctor, deptFallback);
-  if (DEFAULT_STATS_DEPT_ORDER.indexOf(code) >= 0) return code;
-  return REPORT_DEPT_FALLBACK[code] || '기타';
 }
 
 var _statsPeriod = 'daily';
@@ -1367,7 +1500,7 @@ function startDeptOrderEdit() {
 
   var used = {};
   fMix.concat(fOut).forEach(function(r){
-    var d = getReportDeptCode(r.doctor, r.dept);
+    var d = getDeptCode(r.doctor, r.dept);
     used[d] = true;
   });
 
@@ -1400,14 +1533,17 @@ function moveDeptInEdit(idx, delta) {
 
 function saveDeptOrderEdit() {
   if (!_editingDeptOrder || !_editingDeptOrder.length) return;
-  state.statsDeptOrder = _editingDeptOrder.slice();
+  // 기본 고정 순서는 유지하고, 추가 진료과만 사용자 순서로 저장
+  state.statsDeptOrder = _editingDeptOrder.filter(function(d) {
+    return DEFAULT_STATS_DEPT_ORDER.indexOf(d) < 0;
+  });
   saveState();
   const panel = document.getElementById('deptReorderPanel');
   if (panel) panel.style.display = 'none';
   _editingDeptOrder = null;
   renderStats(); // 새 순서로 전체 다시 그림 (요약 + 매트릭스)
   // 간단 토스트 (함수 있으면)
-  if (typeof toast === 'function') toast('진료과 순서 저장 완료. 모든 기간(월별/기간별 포함)에 적용됩니다.', 'success');
+  if (typeof toast === 'function') toast('진료과 순서 저장 완료. 기본 순서(GS→GIC→IMH...)는 고정 유지됩니다.', 'success');
 }
 
 function cancelDeptOrderEdit() {
@@ -1468,138 +1604,146 @@ function formatStatsReportFilename(label) {
   var safe = (label || today()).replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
   return '항암제_조제통계_' + safe + '.xlsx';
 }
-
-function applyStatsReportGridBorders(ws, opts) {
-  var hdrRow = 1;
-  var totalRow = opts.totalRow;
-  var tpnRow = opts.tpnRow;
-  var lastCol = 12;
-  var thin = { style: 'thin', color: { rgb: '000000' } };
-  var medium = { style: 'medium', color: { rgb: '000000' } };
-  function ec(r, c) {
-    var addr = XLSX.utils.encode_cell({ r: r, c: c });
-    if (!ws[addr]) ws[addr] = { t: 'z', s: {} };
-    if (!ws[addr].s) ws[addr].s = {};
-    return ws[addr];
-  }
-  for (var R = hdrRow; R <= tpnRow; R++) {
-    for (var C = 0; C <= lastCol; C++) {
-      var cell = ec(R, C);
-      var top = thin, bottom = thin, left = thin, right = thin;
-      if (C === 0) { left = medium; right = medium; }
-      if (C === lastCol) { left = medium; right = medium; }
-      if (R === hdrRow) top = medium;
-      if (R === totalRow) top = medium;
-      if (R === tpnRow) bottom = medium;
-      cell.s.border = { top: top, bottom: bottom, left: left, right: right };
-    }
-  }
-}
-
-function applyStatsReportFillsOnly(ws, opts) {
-  var totalRow = opts.totalRow;
-  var tpnRow = opts.tpnRow;
-  var lastCol = 12;
-  var headerFill = { patternType: 'solid', fgColor: { rgb: 'FFEEECE1' } };
-  var totalFill = { patternType: 'solid', fgColor: { rgb: 'FFD9D9D9' } };
-  function ec(r, c) {
-    var addr = XLSX.utils.encode_cell({ r: r, c: c });
-    if (!ws[addr]) ws[addr] = { t: 'z', s: {} };
-    if (!ws[addr].s) ws[addr].s = {};
-    return ws[addr];
-  }
-  for (var c = 1; c <= lastCol; c++) ec(1, c).s.fill = headerFill;
-  for (var r = 2; r < totalRow; r++) ec(r, lastCol).s.fill = headerFill;
-  for (var c = 0; c < lastCol; c++) ec(totalRow, c).s.fill = totalFill;
-  ec(totalRow, lastCol).s.fill = headerFill;
-  ec(tpnRow, lastCol).s.fill = headerFill;
-}
-function applyStatsReportStyle(ws, opts) {
-  applyStatsReportGridBorders(ws, opts);
-  applyStatsReportFillsOnly(ws, opts);
-}
-
-
 function applyStatsReportDesign(ws, opts) {
   var totalRow = opts.totalRow;
   var tpnRow = opts.tpnRow;
   var lastDataRow = opts.lastDataRow;
-  var footerRow = opts.footerRow;
   var lastCol = 12;
   var thin = { style: 'thin', color: { rgb: '000000' } };
   var medium = { style: 'medium', color: { rgb: '000000' } };
-  var headerFill = { patternType: 'solid', fgColor: { rgb: 'FFEEECE1' } };
-  var totalFill = { patternType: 'solid', fgColor: { rgb: 'FFD9D9D9' } };
+  var none = { style: 'thin', color: { rgb: 'FFFFFF' } };
+  var headerFill = { patternType: 'solid', fgColor: { rgb: '1F497D' } };
+  var totalFill = { patternType: 'solid', fgColor: { rgb: 'D8D8D8' } };
   var fontTitle = { name: '맑은 고딕', sz: 14, bold: true };
   var fontDrug = { name: '맑은 고딕', sz: 10 };
   var fontData = { name: '맑은 고딕', sz: 11 };
   var alignCenter = { horizontal: 'center', vertical: 'center' };
-  var lastRow = (footerRow != null) ? footerRow : tpnRow;
 
   function ensureCell(r, c) {
     var addr = XLSX.utils.encode_cell({ r: r, c: c });
-    if (!ws[addr]) ws[addr] = { t: 'z', s: {} };
+    if (!ws[addr]) ws[addr] = { v: '', t: 's' };
     if (!ws[addr].s) ws[addr].s = {};
     return ws[addr];
   }
 
-  function tableBorder(R, C) {
-    var top = thin, bottom = thin, left = thin, right = thin;
-    if (C === 0) { left = medium; right = medium; }
-    if (C === lastCol) { left = medium; right = medium; }
-    if (R === 0) {
-      top = medium;
-      if (C === 0) left = medium;
-      if (C === lastCol) right = medium;
-    } else if (R === 1) {
-      top = medium;
-    } else if (R === totalRow) {
-      top = (C === lastCol) ? thin : medium;
-    } else if (R === tpnRow) {
-      bottom = medium;
-    }
-    return { top: top, bottom: bottom, left: left, right: right };
-  }
-
-  for (var R = 0; R <= lastRow; R++) {
+  for (var R = 0; R <= tpnRow; R++) {
     for (var C = 0; C <= lastCol; C++) {
       var cell = ensureCell(R, C);
-      cell.s.border = tableBorder(R, C);
-      if (R <= tpnRow) {
-        cell.s.font = (C === 0 && R >= 2 && R < totalRow) ? fontDrug : fontData;
-        cell.s.alignment = alignCenter;
-        if (R === 0) {
-          cell.s.font = fontTitle;
-        } else if (R === 1) {
-          cell.s.fill = headerFill;
-        } else if (R >= 2 && R < totalRow) {
-          if (C === lastCol) cell.s.fill = headerFill;
-        } else if (R === totalRow) {
-          if (C < lastCol) cell.s.fill = totalFill;
-          else cell.s.fill = headerFill;
-        } else if (R === tpnRow) {
-          if (C === lastCol) cell.s.fill = headerFill;
-        }
-      } else {
-        cell.s.font = fontData;
-        cell.s.alignment = (C === 0) ? { horizontal: 'left', vertical: 'center' } : alignCenter;
+      cell.s.font = (C === 0 && R >= 2 && R < totalRow) ? fontDrug : fontData;
+      cell.s.alignment = alignCenter;
+      var top = thin, bottom = thin, left = thin, right = thin;
+      if (R === 0) {
+        cell.s.font = fontTitle;
+        top = medium; left = medium; right = medium;
+      } else if (R === 1) {
+        cell.s.fill = headerFill;
+        top = medium; bottom = thin;
+        if (C === 0) left = medium;
+        if (C === lastCol) { left = medium; right = medium; }
+      } else if (R >= 2 && R < totalRow) {
+        if (C === 0) left = medium;
+        if (C === lastCol) { cell.s.fill = headerFill; left = medium; right = medium; }
+        if (C === 11) { left = none; right = none; }
+      } else if (R === totalRow) {
+        cell.s.fill = totalFill;
+        top = medium; bottom = thin;
+        if (C === 0) left = medium;
+        if (C === lastCol) { left = medium; right = medium; }
+      } else if (R === tpnRow) {
+        bottom = medium;
+        if (C === 0) left = medium;
+        if (C === lastCol) { cell.s.fill = headerFill; left = medium; right = medium; }
+        if (C >= 1 && C <= 10) bottom = medium;
+        if (C === 11) { bottom = medium; left = none; right = none; }
       }
+      cell.s.border = { top: top, bottom: bottom, left: left, right: right };
     }
   }
 
-  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: lastRow, c: lastCol } });
   ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } }];
   ws['!cols'] = [{ wch: 13.125 }];
   for (var i = 1; i <= lastCol; i++) ws['!cols'].push({ wch: 8.43 });
   ws['!rows'] = [{ hpt: 36.75 }];
   ws['!rows'][lastDataRow - 1] = { hpt: 17.25 };
   ws['!rows'][tpnRow] = { hpt: 17.25 };
-  ws['!views'] = [{ state: 'frozen', xSplit: 0, ySplit: 2, topLeftCell: 'A3', activePane: 'bottomLeft' }];
+  ws['!autofilter'] = { ref: 'A2:M' + (tpnRow + 1) };
+}
+function getReportDeptCode(doctor, deptFallback) {
+  var code = getDeptCode(doctor, deptFallback);
+  if (DEFAULT_STATS_DEPT_ORDER.indexOf(code) >= 0) return code;
+  return REPORT_DEPT_FALLBACK[code] || '기타';
+}
+
+var _statsPeriod = 'daily';
+function setStatsPeriod(mode) {
+  _statsPeriod = mode;
+  document.querySelectorAll('.stats-period-btn').forEach(function(b){ b.classList.remove('active'); });
+  event.target.classList.add('active');
+  var monthEl = document.getElementById('statsMonth');
+  var fromEl = document.getElementById('statsDateFrom');
+  var toEl = document.getElementById('statsDateTo');
+  var sepEl = document.getElementById('statsDateSep');
+  monthEl.style.display = 'none'; fromEl.style.display = 'none'; toEl.style.display = 'none'; sepEl.style.display = 'none';
+  if (mode === 'monthly') {
+    monthEl.style.display = '';
+    if (!monthEl.value) { var d = new Date(); monthEl.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }
+  } else if (mode === 'custom') {
+    fromEl.style.display = ''; toEl.style.display = ''; sepEl.style.display = '';
+    if (!fromEl.value) { var keys = Object.keys(state.dailyData).sort(); fromEl.value = keys[0] || getWorkDate(); }
+    if (!toEl.value) toEl.value = getWorkDate();
+  }
+  renderStats();
+}
+function toggleStatsView(view) {
+  document.querySelectorAll('.stats-toggle-btn').forEach(function(b){ b.classList.remove('active'); });
+  event.target.classList.add('active');
+  document.getElementById('statsViewDept').style.display = view === 'dept' ? '' : 'none';
+  document.getElementById('statsViewAmpm').style.display = view === 'ampm' ? '' : 'none';
+}
+function printStatsSection(section) {
+  var el = section === 'dept' ? document.getElementById('statsViewDept') : document.getElementById('statsAmpmContent');
+  var label = document.getElementById('statsDateLabel').textContent;
+  var win = window.open('', '_blank');
+  win.document.write('<html><head><title>통계 출력</title><style>body{font-family:sans-serif;font-size:12px;margin:20px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #999;padding:4px 6px;font-size:11px;line-height:1.3;}th{background:#f1f5f9;font-weight:700;}.total-row{font-weight:700;background:#e2e8f0 !important;}td.num{text-align:right;font-variant-numeric:tabular-nums;}h4{margin:12px 0 6px;font-size:13px;}</style></head><body>');
+  win.document.write('<h3>' + (section === 'dept' ? '진료과별 통계' : '오전/오후 통계') + ' - ' + label + '</h3>');
+  win.document.write(el.innerHTML);
+  win.document.write('</body></html>');
+  win.document.close();
+  win.print();
+}
+function cleanDrugName(name) {
+  if (!name) return '';
+  var cleaned = name;
+  // 여러 suffix가 겹칠 수 있어 반복 적용: 괄호 → 단위용량 → 제형토큰 → 투여경로 → 꼬리숫자 → 구두점
+  for (var i = 0; i < 8; i++) {
+    var before = cleaned;
+    // 괄호 내용 제거
+    cleaned = cleaned.replace(/\s*\([^)]*\)/g, '');
+    // 숫자+단위(mg, ml, g 등) 제거
+    cleaned = cleaned.replace(/\s*\d+[\d,.]*\s*(mg|ml|g|mcg|ug|iu|unit|mci|mbq|%)\b/gi, ' ');
+    // 제형 토큰 제거 (inj, tab, cap 등) — 하이픈 앞도 매칭
+    cleaned = cleaned.replace(/(^|\s|\-)(inj|tab|cap|syr|amp|vial|kit|bag|btl|pen|sol|cream|oint|patch|susp|pwd|powder)\b\.?/gi, ' ');
+    // 투여경로 토큰은 제거하지 않음 (맙테라 SC ≠ 맙테라 등 별개 약품)
+    // 꼬리 숫자 제거 (단위 없이 "Ditaxel-1", "Ditaxel 1")
+    cleaned = cleaned.replace(/[\s\-]+\d+(\.\d+)?\s*$/g, '');
+    // 영문 4자+ 바로 뒤에 붙은 번호 제거 ("Ditaxel1" → "Ditaxel"). B12, K1 등 3자 이하는 보존
+    cleaned = cleaned.replace(/([A-Za-z]{4,})\d+/g, '$1');
+    // 꼬리 특수문자/공백
+    cleaned = cleaned.replace(/[\s,./\-]+$/g, '').trim();
+    // 공백 정규화 (중복 공백 제거)
+    cleaned = cleaned.replace(/\s+/g, ' ');
+    if (cleaned === before) break;
+  }
+  if (cleaned.length > 0) cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  return cleaned || name;
 }
 function getStatsData() {
   var mode = _statsPeriod;
   if (mode === 'daily') {
-    return { mix: state.inpatientMix || [], out: state.outpatientData || [], label: getWorkDate(), days: 1 };
+    var wd = getWorkDate();
+    var pd = {};
+    pd[wd] = { mix: state.inpatientMix || [], out: state.outpatientData || [] };
+    return { mix: state.inpatientMix || [], out: state.outpatientData || [], label: wd, days: 1, perDate: pd };
   }
   var mix = [], out = [], dayCount = 0, perDate = {};
   function addDate(date, dd) {
@@ -1654,6 +1798,63 @@ function getStatsData() {
   }
   return { mix: mix, out: out, label: from + ' ~ ' + to + ' (' + dayCount + '일)', days: dayCount, perDate: perDate };
 }
+// 캐시 행이 풀 집계 형태인지 검증 (예전 AM/PM-only 행은 무효)
+function isFullAggregate(s) {
+  return !!(s && (s.depts || s.drugDept || s.drugDetail));
+}
+function getMappedDeptFromEtcEntry(entry) {
+  var doctor = String(entry || '').split('/')[0].trim();
+  if (!doctor || doctor === '(처방의없음)') return '';
+  var map = (state && state.doctorDeptMap) || {};
+  var mapped = map[doctor];
+  return mapped && mapped !== '기타' ? mapped : '';
+}
+function remapCachedAggregateDepts(s) {
+  if (!s || !s.depts || !s.depts['기타'] || !(s.etcDoctors || []).length) return s;
+  var mappedSet = {};
+  for (var i = 0; i < s.etcDoctors.length; i++) {
+    var mapped = getMappedDeptFromEtcEntry(s.etcDoctors[i]);
+    if (!mapped) return s;
+    mappedSet[mapped] = 1;
+  }
+  var mappedDepts = Object.keys(mappedSet);
+  if (mappedDepts.length !== 1) return s;
+  var target = mappedDepts[0];
+  var out = Object.assign({}, s);
+  out.depts = {};
+  Object.keys(s.depts).forEach(function(d) {
+    if (d !== '기타') out.depts[d] = { pts: s.depts[d].pts || 0, rx: s.depts[d].rx || 0 };
+  });
+  if (!out.depts[target]) out.depts[target] = { pts: 0, rx: 0 };
+  out.depts[target].pts += s.depts['기타'].pts || 0;
+  out.depts[target].rx += s.depts['기타'].rx || 0;
+  out.drugDept = {};
+  Object.keys(s.drugDept || {}).forEach(function(name) {
+    var src = s.drugDept[name] || {};
+    var dst = {};
+    Object.keys(src).forEach(function(k) { dst[k] = src[k]; });
+    if (dst['기타']) {
+      dst[target] = (dst[target] || 0) + dst['기타'];
+      delete dst['기타'];
+    }
+    out.drugDept[name] = dst;
+  });
+  out.etcDoctors = [];
+  return out;
+}
+// 일별 집계 객체 가져오기 (raw 우선, 없으면 서버 캐시)
+function getDailyAggregateForDate(date, perDate) {
+  if (perDate && perDate[date]) {
+    var d = perDate[date];
+    var hasRaw = (d.mix && d.mix.length > 0) || (d.out && d.out.length > 0);
+    if (hasRaw) return buildDailyStatsFull(d.mix || [], d.out || []);
+  }
+  if (_longTermStatsCache && _longTermStatsCache.data && isFullAggregate(_longTermStatsCache.data[date])) {
+    return remapCachedAggregateDepts(_longTermStatsCache.data[date]);
+  }
+  return null;
+}
+
 function renderStats() {
   var sd = getStatsData();
   var mix = sd.mix, out = sd.out;
@@ -1667,7 +1868,52 @@ function renderStats() {
   var ampmEl = document.getElementById('statsAmpmContent');
   var viewToggle = document.getElementById('statsViewToggle');
 
-  if (mix.length === 0 && out.length === 0) {
+  // 1) 표시할 날짜 범위 결정
+  var statDates = [];
+  // 월별/사용자정의 모드면 그 범위 전체 (서버 캐시 미리 로드)
+  var monthEl = document.getElementById('statsMonth');
+  var ym = monthEl ? monthEl.value : '';
+  if (_statsPeriod === 'monthly' && ym) {
+    var p = ym.split('-'); var year = parseInt(p[0]), month = parseInt(p[1]);
+    var dim = new Date(year, month, 0).getDate();
+    statDates = [];
+    for (var dd = 1; dd <= dim; dd++) statDates.push(year + '-' + String(month).padStart(2,'0') + '-' + String(dd).padStart(2,'0'));
+  } else if (_statsPeriod === 'custom') {
+    var fEl = document.getElementById('statsDateFrom'), tEl = document.getElementById('statsDateTo');
+    if (fEl && tEl && fEl.value && tEl.value) {
+      statDates = [];
+      var cur = parseLocalYmd(fEl.value), end = parseLocalYmd(tEl.value);
+      while (cur <= end) {
+        statDates.push(cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0'));
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+  }
+  // 폴백: perDate 키 사용 (daily 모드 등)
+  if (statDates.length === 0 && sd.perDate) {
+    statDates = Object.keys(sd.perDate);
+  }
+  // 메모리에 없거나 raw가 비었고 캐시도 sparse면 서버 캐시 비동기 로드
+  var needFetch = statDates.some(function(d){
+    if (!sd.perDate || !Object.prototype.hasOwnProperty.call(sd.perDate, d)) return true;
+    var day = sd.perDate[d] || {};
+    var hasRaw = (day.mix && day.mix.length > 0) || (day.out && day.out.length > 0);
+    var cached = _longTermStatsCache && _longTermStatsCache.data && _longTermStatsCache.data[d];
+    return !hasRaw && !isFullAggregate(cached);
+  });
+  if (needFetch && statDates.length > 0) {
+    fetchLongTermStats(statDates[0], statDates[statDates.length - 1]);
+  }
+  // 2) 각 날짜의 집계 객체를 모아서 합산
+  var perDayStats = [];
+  var dataExistDays = 0;
+  statDates.forEach(function(date){
+    var agg = getDailyAggregateForDate(date, sd.perDate);
+    if (agg) { perDayStats.push(agg); dataExistDays++; }
+  });
+  var sumS = sumDailyStats(perDayStats);
+
+  if (perDayStats.length === 0) {
     emptyEl.classList.remove('hidden');
     cardsEl.innerHTML = ''; deptEl.innerHTML = '';
     drugTbl.querySelector('thead').innerHTML = ''; drugTbl.querySelector('tbody').innerHTML = '';
@@ -1678,102 +1924,117 @@ function renderStats() {
   emptyEl.classList.add('hidden');
   detailGrid.style.display = '';
   viewToggle.style.display = '';
-  dateLabel.textContent = sd.label;
+  dateLabel.textContent = sd.label + (dataExistDays > 0 ? ' / ' + dataExistDays + '일 데이터' : '');
 
-  // ── 수액 제외 필터 ──
-  var fMix = mix.filter(function(r){ return !isVehicle(r.code); });
-  var fOut = out.filter(function(r){ return !isVehicle(r.code); });
-
-  // ── 환자/처방/약품 건수 (수액 제외) ──
-  var inPts={},outPts={},allPts={},inRx={},outRx={},inDrugs={},outDrugs={},allDrugs={};
-  fMix.forEach(function(r){var k=getStatsPatientKey(r);inPts[k]=1;allPts[k]=1;inRx[getStatsRxKey(r)]=1;inDrugs[r.code]=1;allDrugs[r.code]=1;});
-  fOut.forEach(function(r){var k=getStatsPatientKey(r);outPts[k]=1;allPts[k]=1;outRx[getStatsRxKey(r)]=1;outDrugs[r.code]=1;allDrugs[r.code]=1;});
-  var inP=Object.keys(inPts).length,outP=Object.keys(outPts).length,totP=Object.keys(allPts).length;
-  var inR=Object.keys(inRx).length,outR=Object.keys(outRx).length;
+  // ── 환자/처방/약품 카드 (집계 합산 기반) ──
+  var totP = sumS.inP + sumS.outP;
+  var inP = sumS.inP, outP = sumS.outP, inR = sumS.inR, outR = sumS.outR;
+  var inDrugN = 0, outDrugN = 0, allDrugN = Object.keys(sumS.drugDept).length;
+  // drugDetail도 재정규화 (캐시의 옛 키 병합)
+  var normDetail = {};
+  Object.keys(sumS.drugDetail || {}).forEach(function(cn){
+    var norm = statsDrugDisplayName(cn); if (!norm) norm = cn;
+    if (!normDetail[norm]) normDetail[norm] = { inQty:0, outQty:0, inPts:0, outPts:0 };
+    var s = sumS.drugDetail[cn];
+    normDetail[norm].inQty += (s.inQty||0);
+    normDetail[norm].outQty += (s.outQty||0);
+    normDetail[norm].inPts += (s.inPts||0);
+    normDetail[norm].outPts += (s.outPts||0);
+  });
+  sumS.drugDetail = normDetail;
+  // 약품 카운트는 drugDetail로부터 추산
+  Object.keys(sumS.drugDetail).forEach(function(cn){
+    var d = sumS.drugDetail[cn];
+    if (d.inPts > 0 || d.inQty > 0) inDrugN++;
+    if (d.outPts > 0 || d.outQty > 0) outDrugN++;
+  });
 
   cardsEl.innerHTML =
     '<div class="stat-card" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#3b82f6;font-weight:600;">환자건수</div><div style="font-size:22px;font-weight:800;color:#1e40af;">'+totP+'</div><div style="font-size:11px;color:#64748b;">입원 '+inP+' / 외래 '+outP+'</div></div>'
     +'<div class="stat-card" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#22c55e;font-weight:600;">처방건수</div><div style="font-size:22px;font-weight:800;color:#15803d;">'+(inR+outR)+'</div><div style="font-size:11px;color:#64748b;">입원 '+inR+' / 외래 '+outR+'</div></div>'
-    +'<div class="stat-card" style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#eab308;font-weight:600;">약품건수</div><div style="font-size:22px;font-weight:800;color:#a16207;">'+Object.keys(allDrugs).length+'</div><div style="font-size:11px;color:#64748b;">입원 '+Object.keys(inDrugs).length+' / 외래 '+Object.keys(outDrugs).length+'</div></div>'
-    +'<div class="stat-card" style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#ec4899;font-weight:600;">데이터 행수</div><div style="font-size:22px;font-weight:800;color:#be185d;">'+(fMix.length+fOut.length)+'</div><div style="font-size:11px;color:#64748b;">입원 '+fMix.length+' / 외래 '+fOut.length+'</div></div>';
+    +'<div class="stat-card" style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#eab308;font-weight:600;">약품건수</div><div style="font-size:22px;font-weight:800;color:#a16207;">'+allDrugN+'</div><div style="font-size:11px;color:#64748b;">입원 '+inDrugN+' / 외래 '+outDrugN+'</div></div>'
+    +'<div class="stat-card" style="background:#fdf2f8;border:1px solid #fbcfe8;border-radius:8px;padding:10px 14px;"><div style="font-size:11px;color:#ec4899;font-weight:600;">데이터 행수</div><div style="font-size:22px;font-weight:800;color:#be185d;">'+(sumS.fMixRows+sumS.fOutRows)+'</div><div style="font-size:11px;color:#64748b;">입원 '+sumS.fMixRows+' / 외래 '+sumS.fOutRows+'</div></div>';
 
-  // ── 진료과별 (처방의→진료과 매핑, 수액 제외) ──
-  // 참조 양식 순서(GS→GIC→...) 또는 사용자가 저장한 순서(statsDeptOrder) 를 우선 사용
-  var depts = {};
-  fMix.concat(fOut).forEach(function(r){
-    var dept = getReportDeptCode(r.doctor, r.dept);
-    if(!depts[dept])depts[dept]={pts:{},rx:{}};
-    depts[dept].pts[getStatsPatientKey(r)]=1;
-    depts[dept].rx[getStatsRxKey(r)]=1;
-  });
+  // ── 진료과별 (집계 합산) ──
+  var depts = sumS.depts || {};
   var preferredOrder = getPreferredDeptOrder();
   var deptKeys = getOrderedDepts(depts, preferredOrder);
-  var deptHtml='<table class="stats-bordered"><thead><tr><th>진료과</th><th style="text-align:right">환자</th><th style="text-align:right">처방</th></tr></thead><tbody>';
-  deptKeys.forEach(function(d){deptHtml+='<tr><td>'+escapeHtml(d)+'</td><td class="num">'+Object.keys(depts[d].pts).length+'</td><td class="num">'+Object.keys(depts[d].rx).length+'</td></tr>';});
-  deptHtml+='</tbody></table>';
+  var deptHtml = '<table class="stats-bordered"><thead><tr><th>진료과</th><th style="text-align:right">환자</th><th style="text-align:right">처방</th></tr></thead><tbody>';
+  var etcUniq = (sumS.etcDoctors || []).slice();
+  window._etcDoctorList = etcUniq;
+  deptKeys.forEach(function(d){
+    var attr = d === '기타' && etcUniq.length > 0
+      ? ' style="cursor:pointer;color:#2563eb;text-decoration:underline;" data-show-etc="1"'
+      : '';
+    deptHtml += '<tr><td'+attr+'>'+escapeHtml(d)+(d==='기타'&&etcUniq.length>0?' [?]':'')+'</td><td class="num">'+depts[d].pts+'</td><td class="num">'+depts[d].rx+'</td></tr>';
+  });
+  deptHtml += '</tbody></table>';
   deptEl.innerHTML = deptKeys.length > 0 ? deptHtml : '<span style="font-size:12px;color:#94a3b8;">진료과 데이터 없음</span>';
+  var etcCell = deptEl.querySelector('[data-show-etc="1"]');
+  if (etcCell) {
+    etcCell.addEventListener('click', function(){
+      alert('[기타 처방의 / 진료과]\n\n' + (window._etcDoctorList || []).join('\n'));
+    });
+  }
 
-  // ── 약품별 × 진료과 매트릭스 (처방건수, 수액 제외) ──
-  // deptOrder 하드코딩 제거 → getOrderedDepts 로 통일 (저장된 순서 즉시 반영, 재업로드 없이 위치 변경 가능)
+  // ── 약품 × 진료과 매트릭스 (집계 합산) ──
+  // 서버 캐시의 옛 키를 현재 cleanDrugName으로 재정규화 (중복 병합)
+  var rawDrugDept = sumS.drugDept || {};
   var drugDept = {};
+  Object.keys(rawDrugDept).forEach(function(cn){
+    var norm = cleanDrugName(cn);
+    if (!norm) norm = cn;
+    if (!drugDept[norm]) drugDept[norm] = { code: rawDrugDept[cn].code };
+    Object.keys(rawDrugDept[cn]).forEach(function(k){
+      if (k === 'code') return;
+      drugDept[norm][k] = (drugDept[norm][k]||0) + (rawDrugDept[cn][k]||0);
+    });
+  });
   var usedDepts = {};
-  fMix.concat(fOut).forEach(function(r){
-    var cname = statsDrugDisplayName(r.name);
-    if(!cname) return;
-    var dept = getReportDeptCode(r.doctor, r.dept);
-    if(!drugDept[cname])drugDept[cname]={code:r.code};
-    if(!drugDept[cname][dept])drugDept[cname][dept]=new Set();
-    drugDept[cname][dept].add(getStatsRxKey(r));
-    usedDepts[dept]=1;
+  Object.keys(drugDept).forEach(function(cn){
+    Object.keys(drugDept[cn]).forEach(function(k){ if (k !== 'code') usedDepts[k] = 1; });
   });
   var drugKeys = Object.keys(drugDept).sort();
-  if(drugKeys.length > 0){
+  if (drugKeys.length > 0) {
     var activeDepts = getOrderedDepts(usedDepts, preferredOrder);
-    var mHtml='<div style="overflow-x:auto;"><table class="stats-bordered"><thead><tr><th>약품명</th>';
-    activeDepts.forEach(function(d){mHtml+='<th style="text-align:center;min-width:36px;">'+d+'</th>';});
-    mHtml+='<th style="text-align:right;font-weight:700;">합계</th></tr></thead><tbody>';
-    var colTotals={};activeDepts.forEach(function(d){colTotals[d]=0;});var grandTotal=0;
+    var mHtml = '<div style="overflow-x:auto;"><table class="stats-bordered"><thead><tr><th>약품명</th>';
+    activeDepts.forEach(function(d){ mHtml += '<th style="text-align:center;min-width:36px;">'+d+'</th>'; });
+    mHtml += '<th style="text-align:right;font-weight:700;">합계</th></tr></thead><tbody>';
+    var colTotals = {}; activeDepts.forEach(function(d){ colTotals[d] = 0; }); var grandTotal = 0;
     drugKeys.forEach(function(dn){
-      mHtml+='<tr><td style="white-space:nowrap;">'+escapeHtml(dn)+'</td>';
-      var rowTotal=0;
+      mHtml += '<tr><td style="white-space:nowrap;">'+escapeHtml(dn)+'</td>';
+      var rowTotal = 0;
       activeDepts.forEach(function(d){
-        var cnt=drugDept[dn][d]?drugDept[dn][d].size:0;
-        mHtml+='<td class="num">'+(cnt||'')+'</td>';
-        rowTotal+=cnt;colTotals[d]+=cnt;
+        var cnt = drugDept[dn][d] || 0;
+        mHtml += '<td class="num">'+(cnt||'')+'</td>';
+        rowTotal += cnt; colTotals[d] += cnt;
       });
-      grandTotal+=rowTotal;
-      mHtml+='<td class="num" style="font-weight:700;">'+rowTotal+'</td></tr>';
+      grandTotal += rowTotal;
+      mHtml += '<td class="num" style="font-weight:700;">'+rowTotal+'</td></tr>';
     });
-    mHtml+='<tr class="total-row"><td>합계</td>';
-    activeDepts.forEach(function(d){mHtml+='<td class="num">'+colTotals[d]+'</td>';});
-    mHtml+='<td class="num">'+grandTotal+'</td></tr>';
-    mHtml+='</tbody></table></div>';
+    mHtml += '<tr class="total-row"><td>합계</td>';
+    activeDepts.forEach(function(d){ mHtml += '<td class="num">'+colTotals[d]+'</td>'; });
+    mHtml += '<td class="num">'+grandTotal+'</td></tr>';
+    mHtml += '</tbody></table></div>';
     chemoMatrixEl.innerHTML = mHtml;
   } else {
     chemoMatrixEl.innerHTML = '';
   }
 
-  // ── 약품별 상세 (수액 제외) ──
-  // 각 환자의 fractional vial을 개별 올림 처리 (4.63 via → 5 via, 0.37 via → 1 via)
-  var drugMap = {};
-  fMix.forEach(function(r){
-    var cn = cleanDrugName(r.name);
-    if(!drugMap[cn])drugMap[cn]={name:cn,inQty:0,outQty:0,inPts:{},outPts:{}};
-    drugMap[cn].inQty+=Math.ceil(r.totalQty||(r.dose||0));
-    drugMap[cn].inPts[getStatsPatientKey(r)]=1;
-  });
-  fOut.forEach(function(r){
-    var cn = cleanDrugName(r.name);
-    if(!drugMap[cn])drugMap[cn]={name:cn,inQty:0,outQty:0,inPts:{},outPts:{}};
-    drugMap[cn].outQty+=Math.ceil(r.totalQty||0);
-    drugMap[cn].outPts[getStatsPatientKey(r)]=1;
-  });
-  var drugRows=[];
-  Object.keys(drugMap).forEach(function(cn){
-    var d=drugMap[cn];
-    drugRows.push({name:d.name,inQty:Math.round(d.inQty*10)/10,outQty:Math.round(d.outQty*10)/10,
-      inPts:Object.keys(d.inPts).length,outPts:Object.keys(d.outPts).length,
-      total:Math.round((d.inQty+d.outQty)*10)/10});
+  // ── 약품별 상세 (집계 합산) ──
+  var drugRows = [];
+  Object.keys(sumS.drugDetail || {}).forEach(function(cn){
+    var d = sumS.drugDetail[cn];
+    var inQty = roundChargeableVials(d.inQty || 0);
+    var outQty = roundChargeableVials(d.outQty || 0);
+    drugRows.push({
+      name: cn,
+      inQty: inQty,
+      outQty: outQty,
+      inPts: d.inPts||0,
+      outPts: d.outPts||0,
+      total: inQty + outQty
+    });
   });
   drugRows.sort(function(a,b){return b.total-a.total;});
   var thead='<tr><th>약품명</th><th style="text-align:right">입원 환자</th><th style="text-align:right">입원 사용량</th><th style="text-align:right">외래 환자</th><th style="text-align:right">외래 사용량</th><th style="text-align:right">합계</th></tr>';
@@ -1789,6 +2050,194 @@ function renderStats() {
 
   // ── 조제통계 (오전/오후) ──
   renderAmpmStats(sd);
+}
+
+// 장기 통계 캐시: { type: 'chemo|general', range: 'from~to', data: { date: statsObj } }
+var _longTermStatsCache = null;
+// 하나의 날짜에 대해 모든 통계 집계값 계산 (저장용/렌더용 공통, 장기보존용)
+// 반환: AM/PM, 진료과, 약품×진료과 매트릭스, 약품별 상세, 환자/처방/약품 카운트
+function buildDailyStatsFull(mix, out) {
+  var s = buildAmPmStatsForDate(mix, out);
+  var fMix = (mix || []).filter(function(r){ return !isVehicle(r.code); });
+  var fOut = (out || []).filter(function(r){ return !isVehicle(r.code); });
+  // 약품 카운트
+  var inDrugs = {}, outDrugs = {}, allDrugs = {};
+  fMix.forEach(function(r){ inDrugs[r.code]=1; allDrugs[r.code]=1; });
+  fOut.forEach(function(r){ outDrugs[r.code]=1; allDrugs[r.code]=1; });
+  s.inDrugCount = Object.keys(inDrugs).length;
+  s.outDrugCount = Object.keys(outDrugs).length;
+  s.allDrugCount = Object.keys(allDrugs).length;
+  s.fMixRows = fMix.length;
+  s.fOutRows = fOut.length;
+  // 진료과별
+  var depts = {};
+  fMix.concat(fOut).forEach(function(r){
+    var dc = getDeptCode(r.doctor, r.dept);
+    if (!depts[dc]) depts[dc] = { pts:{}, rx:{} };
+    var patientKey = getStatsPatientKey(r);
+    depts[dc].pts[patientKey] = 1;
+    depts[dc].rx[getRxBundleKey(r)] = 1;
+  });
+  s.depts = {};
+  Object.keys(depts).forEach(function(d){
+    s.depts[d] = { pts: Object.keys(depts[d].pts).length, rx: Object.keys(depts[d].rx).length };
+  });
+  // 약품×진료과 매트릭스 (cleanDrugName)
+  var drugDept = {};
+  fMix.concat(fOut).forEach(function(r){
+    var cn = cleanDrugName(r.name);
+    if (!cn) return;
+    var dc = getDeptCode(r.doctor, r.dept);
+    if (!drugDept[cn]) drugDept[cn] = { code:r.code };
+    if (!drugDept[cn][dc]) drugDept[cn][dc] = new Set();
+    drugDept[cn][dc].add(getRxBundleKey(r));
+  });
+  s.drugDept = {};
+  Object.keys(drugDept).forEach(function(cn){
+    var entry = { code: drugDept[cn].code };
+    Object.keys(drugDept[cn]).forEach(function(k){
+      if (k === 'code') return;
+      entry[k] = drugDept[cn][k].size;
+    });
+    s.drugDept[cn] = entry;
+  });
+  // 약품별 상세 (입원/외래 사용량 + 환자수)
+  var drugDetail = {};
+  fMix.forEach(function(r){
+    var cn = cleanDrugName(r.name);
+    if (!drugDetail[cn]) drugDetail[cn] = { inQty:0, outQty:0, inPts:{}, outPts:{} };
+    drugDetail[cn].inQty += roundChargeableVials(r.totalQty || r.dose || 0);
+    drugDetail[cn].inPts[getStatsPatientKey(r)] = 1;
+  });
+  fOut.forEach(function(r){
+    var cn = cleanDrugName(r.name);
+    if (!drugDetail[cn]) drugDetail[cn] = { inQty:0, outQty:0, inPts:{}, outPts:{} };
+    drugDetail[cn].outQty += roundChargeableVials(getOutpatientDailyQty(r));
+    drugDetail[cn].outPts[getStatsPatientKey(r)] = 1;
+  });
+  s.drugDetail = {};
+  Object.keys(drugDetail).forEach(function(cn){
+    var d = drugDetail[cn];
+    s.drugDetail[cn] = {
+      inQty: d.inQty,
+      outQty: d.outQty,
+      inPts: Object.keys(d.inPts).length,
+      outPts: Object.keys(d.outPts).length
+    };
+  });
+  // 기타 처방의 (디버그용)
+  var etcSet = {};
+  fMix.concat(fOut).forEach(function(r){
+    if (getDeptCode(r.doctor, r.dept) === '기타') {
+      etcSet[(r.doctor||'(처방의없음)') + ' / ' + (r.dept||'(진료과없음)')] = 1;
+    }
+  });
+  s.etcDoctors = Object.keys(etcSet);
+  return s;
+}
+
+// 여러 날짜의 집계를 합산 (장기 통계용 - patient-visits 단위)
+function sumDailyStats(statsArr) {
+  var sum = {
+    amP:0,amR:0,pmP:0,pmR:0,inP:0,inR:0,outP:0,outR:0,
+    outAmP:0,outAmR:0,outPmP:0,outPmR:0,
+    inDrugCount:0, outDrugCount:0, allDrugCount:0, fMixRows:0, fOutRows:0,
+    depts:{}, drugDept:{}, drugDetail:{}, etcDoctors:[]
+  };
+  var inDrugSet = {}, outDrugSet = {}, allDrugSet = {};
+  var etcSet = {};
+  statsArr.forEach(function(s){
+    if (!s) return;
+    ['amP','amR','pmP','pmR','inP','inR','outP','outR','outAmP','outAmR','outPmP','outPmR','fMixRows','fOutRows'].forEach(function(k){
+      sum[k] += (s[k]||0);
+    });
+    // depts 합산
+    Object.keys(s.depts || {}).forEach(function(d){
+      if (!sum.depts[d]) sum.depts[d] = { pts:0, rx:0 };
+      sum.depts[d].pts += s.depts[d].pts || 0;
+      sum.depts[d].rx += s.depts[d].rx || 0;
+    });
+    // drugDept 합산
+    Object.keys(s.drugDept || {}).forEach(function(cn){
+      var src = s.drugDept[cn];
+      if (!sum.drugDept[cn]) sum.drugDept[cn] = { code: src.code };
+      Object.keys(src).forEach(function(k){
+        if (k === 'code') return;
+        sum.drugDept[cn][k] = (sum.drugDept[cn][k]||0) + (src[k]||0);
+      });
+    });
+    // drugDetail 합산
+    Object.keys(s.drugDetail || {}).forEach(function(cn){
+      var src = s.drugDetail[cn];
+      if (!sum.drugDetail[cn]) sum.drugDetail[cn] = { inQty:0, outQty:0, inPts:0, outPts:0 };
+      sum.drugDetail[cn].inQty += src.inQty || 0;
+      sum.drugDetail[cn].outQty += src.outQty || 0;
+      sum.drugDetail[cn].inPts += src.inPts || 0;
+      sum.drugDetail[cn].outPts += src.outPts || 0;
+    });
+    (s.etcDoctors||[]).forEach(function(e){ etcSet[e]=1; });
+  });
+  sum.etcDoctors = Object.keys(etcSet).sort();
+  // 약품 카운트는 drugDept 키 수로 근사
+  sum.allDrugCount = Object.keys(sum.drugDept).length;
+  return sum;
+}
+
+// 하나의 날짜에 대해 AM/PM/외래/10시전 집계값 계산 (저장용/렌더용 공통)
+function buildAmPmStatsForDate(mix, out) {
+  mix = (mix || []).filter(function(r){ return !isVehicle(r.code); });
+  out = (out || []).filter(function(r){ return !isVehicle(r.code); });
+  var inPts = new Set(), inRx = new Set();
+  var amPts = new Set(), pmPts = new Set(), amRx = new Set(), pmRx = new Set();
+  var before10Pts = new Set(), before10Rx = new Set();
+  mix.forEach(function(r) {
+    var pk = (typeof getStatsPatientKey === 'function') ? getStatsPatientKey(r) : getPatientKey(r);
+    var bundle = String(r.bundleNo || '').trim();
+    var rxKey = bundle ? (pk + '|' + bundle) : ((typeof getStatsRxKey === 'function') ? getStatsRxKey(r) : pk + '|' + (r.code || '?'));
+    inPts.add(pk);
+    inRx.add(rxKey);
+    if (r.ampm === '오전') { amPts.add(pk); amRx.add(rxKey); }
+    else if (r.ampm === '오후') { pmPts.add(pk); pmRx.add(rxKey); }
+    if (r.receiptTime > 0 && r.receiptTime < 0.4167) {
+      before10Pts.add(pk);
+      before10Rx.add(rxKey);
+    }
+  });
+  var outPts = new Set(), outRx = new Set();
+  var outAmPts = new Set(), outAmRx = new Set(), outPmPts = new Set(), outPmRx = new Set();
+  out.forEach(function(r) {
+    var pk = (typeof getStatsPatientKey === 'function') ? getStatsPatientKey(r) : getPatientKey(r);
+    var bundle = String(r.bundleNo || '').trim();
+    var rxKey = bundle ? (pk + '|' + bundle) : ((typeof getStatsRxKey === 'function') ? getStatsRxKey(r) : pk + '|' + (r.code || '?'));
+    outPts.add(pk);
+    outRx.add(rxKey);
+    if (r.ampm === '오후') { outPmPts.add(pk); outPmRx.add(rxKey); }
+    else if (r.ampm === '오전') { outAmPts.add(pk); outAmRx.add(rxKey); }
+  });
+  return {
+    amP: amPts.size, amR: amRx.size,
+    pmP: pmPts.size, pmR: pmRx.size,
+    inP: inPts.size, inR: inRx.size,
+    outP: outPts.size, outR: outRx.size,
+    outAmP: outAmPts.size, outAmR: outAmRx.size,
+    outPmP: outPmPts.size, outPmR: outPmRx.size,
+    b10P: before10Pts.size, b10R: before10Rx.size
+  };
+}
+
+async function fetchLongTermStats(fromDate, toDate) {
+  var rangeKey = fromDate + '~' + toDate;
+  if (_longTermStatsCache && _longTermStatsCache.type === appDataType && _longTermStatsCache.range === rangeKey) return;
+  try {
+    var res = await fetch(API_BASE + '/state?type=' + appDataType + '&stats_from=' + fromDate + '&stats_to=' + toDate);
+    if (!res.ok) return;
+    var json = await res.json();
+    var data = {};
+    (json.stats || []).forEach(function(r) { try { data[r.date] = JSON.parse(r.stats); } catch(e) {} });
+    _longTermStatsCache = { type: appDataType, range: rangeKey, data: data };
+    // 재렌더 (통계 탭이 열려있을 때만)
+    if (document.getElementById('statsAmpmContent') && typeof renderStats === 'function') renderStats();
+  } catch(e) { console.warn('장기 통계 조회 실패:', e); }
 }
 
 function renderAmpmStats(sd) {
@@ -1813,9 +2262,6 @@ function renderAmpmStats(sd) {
     monthLabel = year + '년 ' + month + '월';
     var daysInMonth = new Date(year, month, 0).getDate();
     for (var d = 1; d <= daysInMonth; d++) {
-      var dt = new Date(year, month - 1, d);
-      var dow = dt.getDay();
-      if (dow === 0 || dow === 6) continue; // 주말 제외
       var dateStr = year + '-' + String(month).padStart(2,'0') + '-' + String(d).padStart(2,'0');
       allDates.push(dateStr);
     }
@@ -1827,10 +2273,7 @@ function renderAmpmStats(sd) {
       var cur = new Date(fromEl.value);
       var end = new Date(toEl.value);
       while (cur <= end) {
-        var dow = cur.getDay();
-        if (dow !== 0 && dow !== 6) {
-          allDates.push(cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0'));
-        }
+        allDates.push(cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0'));
         cur.setDate(cur.getDate() + 1);
       }
     }
@@ -1838,6 +2281,11 @@ function renderAmpmStats(sd) {
   // 데이터가 있는 날짜 + 전체 날짜 병합
   var sortedDates = allDates.length > 0 ? allDates : Object.keys(dates).sort();
   if (sortedDates.length === 0) { el.innerHTML = ''; return; }
+  // 메모리에 없는 날짜가 있으면 서버 장기 통계 비동기 조회
+  if (sortedDates.length > 0) {
+    var needFetch = sortedDates.some(function(d) { return !dates[d]; });
+    if (needFetch) fetchLongTermStats(sortedDates[0], sortedDates[sortedDates.length - 1]);
+  }
   // monthLabel 폴백
   if (!monthLabel && sortedDates.length > 0) {
     var fp = sortedDates[0].split('-');
@@ -1850,10 +2298,9 @@ function renderAmpmStats(sd) {
   html += '<div style="text-align:center;margin-bottom:12px;"><span style="font-size:20px;font-weight:800;color:#1e293b;letter-spacing:1px;">' + monthLabel + ' 조제통계</span></div>';
   html += '<div style="overflow-x:auto;"><table class="stats-bordered">';
   html += '<thead><tr><th style="width:30px;">요일</th><th style="width:50px;">날짜</th><th style="width:45px;"></th>';
-  html += '<th style="text-align:right;">입원 환자수</th><th style="text-align:right;">입원 조제건수</th>';
-  html += '<th style="text-align:right;">외래 환자수</th><th style="text-align:right;">외래 조제건수</th>';
+  html += '<th style="text-align:right;">입원 환자수</th><th class="col-sep-group" style="text-align:right;">입원 조제건수</th>';
+  html += '<th style="text-align:right;">외래 환자수</th><th class="col-sep-group" style="text-align:right;">외래 조제건수</th>';
   html += '<th style="text-align:right;">Total 조제건수</th>';
-  html += '<th style="text-align:right;">10시전 환자수</th><th style="text-align:right;">10시전 건수</th>';
   html += '</tr></thead><tbody>';
 
   var grandInPts=0, grandInRx=0, grandOutPts=0, grandOutRx=0, grandTotal=0, grandBefore10Pts=0, grandBefore10Rx=0;
@@ -1868,38 +2315,26 @@ function renderAmpmStats(sd) {
     var dayName = dayNames[dt.getDay()];
     var day = parseInt(dp[2]);
 
-    // AM/PM 분류 (입원) + 10시전 계산
-    var amPts = new Set(), pmPts = new Set(), amRx = new Set(), pmRx = new Set();
-    var before10Pts = new Set(), before10Rx = new Set();
-    dayMix.forEach(function(r) {
-      var pk = getStatsPatientKey(r);
-      var rxKey = getStatsRxKey(r);
-      if (r.ampm === '오전') { amPts.add(pk); amRx.add(rxKey); }
-      else if (r.ampm === '오후') { pmPts.add(pk); pmRx.add(rxKey); }
-      else { amPts.add(pk); amRx.add(rxKey); }
-      // 10시전: receiptTime < 0.4167 (엑셀 시리얼 10:00 ≈ 0.4167)
-      if (r.receiptTime > 0 && r.receiptTime < 0.4167) {
-        before10Pts.add(pk);
-        before10Rx.add(rxKey);
-      }
-    });
-    // 외래: AM/PM 구분 없음, total행에만 표시
-    var outPts = new Set(), outRx = new Set();
-    dayOut.forEach(function(r) {
-      var pk = getStatsPatientKey(r);
-      outPts.add(pk); outRx.add(getStatsRxKey(r));
-    });
-
-    var allInPts = new Set([...amPts, ...pmPts]);
-    var allInRx = new Set([...amRx, ...pmRx]);
-
-    var amInP = amPts.size, amInR = amRx.size, amTotal = amInR;
-    var pmInP = pmPts.size, pmInR = pmRx.size, pmTotal = pmInR;
-    var totInP = allInPts.size, totInR = allInRx.size, totOutP = outPts.size, totOutR = outRx.size;
+    // 1) 메모리 state.dailyData에 있으면 원본 행에서 직접 계산
+    // 2) 없으면 서버 장기 통계 캐시에서 집계값 조회
+    var s;
+    if (hasData && (dayMix.length > 0 || dayOut.length > 0)) {
+      s = buildAmPmStatsForDate(dayMix, dayOut);
+      dataExistDays++;
+    } else if (_longTermStatsCache && _longTermStatsCache.data && _longTermStatsCache.data[date]) {
+      s = _longTermStatsCache.data[date];
+      dataExistDays++;
+      hasData = true;
+    } else {
+      s = { amP:0, amR:0, pmP:0, pmR:0, inP:0, inR:0, outP:0, outR:0, b10P:0, b10R:0 };
+    }
+    var amInP = s.amP, amInR = s.amR, amTotal = s.amR;
+    var pmInP = s.pmP, pmInR = s.pmR, pmTotal = s.pmR;
+    var totInP = s.inP, totInR = s.inR, totOutP = s.outP, totOutR = s.outR;
+    var amOutP = s.outAmP || 0, amOutR = s.outAmR || 0;
+    var pmOutP = s.outPmP || 0, pmOutR = s.outPmR || 0;
     var totAll = totInR + totOutR;
-    var b10P = before10Pts.size, b10R = before10Rx.size;
-
-    if (hasData && (dayMix.length > 0 || dayOut.length > 0)) dataExistDays++;
+    var b10P = s.b10P, b10R = s.b10R;
     grandInPts += totInP; grandInRx += totInR; grandOutPts += totOutP; grandOutRx += totOutR;
     grandTotal += totAll; grandBefore10Pts += b10P; grandBefore10Rx += b10R;
 
@@ -1907,34 +2342,30 @@ function renderAmpmStats(sd) {
     var dayStyle = weekend ? 'color:#dc2626;' : '';
     var noDataStyle = !hasData ? 'opacity:0.4;' : '';
 
-    // AM 행
+    // AM 행 (외래는 AM에 표시)
     html += '<tr style="' + noDataStyle + '"><td rowspan="3" style="text-align:center;font-weight:700;vertical-align:middle;' + dayStyle + '">' + dayName + '</td>';
     html += '<td rowspan="3" style="text-align:center;vertical-align:middle;">' + day + '</td>';
     html += '<td style="text-align:center;font-weight:600;color:#2563eb;">AM</td>';
-    html += '<td class="num">' + amInP + '</td><td class="num">' + amInR + '</td>';
-    html += '<td class="num"></td><td class="num"></td>';
-    html += '<td class="num">' + amTotal + '</td>';
-    html += '<td class="num"></td><td class="num"></td></tr>';
+    html += '<td class="num">' + amInP + '</td><td class="num col-sep-group">' + amInR + '</td>';
+    html += '<td class="num">' + amOutP + '</td><td class="num col-sep-group">' + amOutR + '</td>';
+    html += '<td class="num">' + (amTotal + amOutR) + '</td></tr>';
     // PM 행
     html += '<tr style="' + noDataStyle + '"><td style="text-align:center;font-weight:600;color:#dc2626;">PM</td>';
-    html += '<td class="num">' + pmInP + '</td><td class="num">' + pmInR + '</td>';
-    html += '<td class="num"></td><td class="num"></td>';
-    html += '<td class="num">' + pmTotal + '</td>';
-    html += '<td class="num"></td><td class="num"></td></tr>';
-    // total 행
-    html += '<tr style="background:#f8fafc;font-weight:600;' + noDataStyle + '"><td style="text-align:center;">total</td>';
-    html += '<td class="num">' + totInP + '</td><td class="num">' + totInR + '</td>';
-    html += '<td class="num">' + totOutP + '</td><td class="num">' + totOutR + '</td>';
-    html += '<td class="num" style="font-weight:700;">' + totAll + '</td>';
-    html += '<td class="num">' + b10P + '</td><td class="num">' + b10R + '</td></tr>';
+    html += '<td class="num">' + pmInP + '</td><td class="num col-sep-group">' + pmInR + '</td>';
+    html += '<td class="num">' + pmOutP + '</td><td class="num col-sep-group">' + pmOutR + '</td>';
+    html += '<td class="num">' + (pmTotal + pmOutR) + '</td></tr>';
+    // total 행 (일자 구분 굵은 선)
+    html += '<tr class="day-sep" style="background:#f8fafc;font-weight:600;' + noDataStyle + '"><td style="text-align:center;">total</td>';
+    html += '<td class="num">' + totInP + '</td><td class="num col-sep-group">' + totInR + '</td>';
+    html += '<td class="num">' + totOutP + '</td><td class="num col-sep-group">' + totOutR + '</td>';
+    html += '<td class="num" style="font-weight:700;">' + totAll + '</td></tr>';
   });
 
   // 월 합계
   html += '<tr class="total-row"><td colspan="3" style="text-align:center;">합계 (' + dataExistDays + '일)</td>';
-  html += '<td class="num">' + grandInPts + '</td><td class="num">' + grandInRx + '</td>';
-  html += '<td class="num">' + grandOutPts + '</td><td class="num">' + grandOutRx + '</td>';
-  html += '<td class="num">' + grandTotal + '</td>';
-  html += '<td class="num">' + grandBefore10Pts + '</td><td class="num">' + grandBefore10Rx + '</td></tr>';
+  html += '<td class="num">' + grandInPts + '</td><td class="num col-sep-group">' + grandInRx + '</td>';
+  html += '<td class="num">' + grandOutPts + '</td><td class="num col-sep-group">' + grandOutRx + '</td>';
+  html += '<td class="num">' + grandTotal + '</td></tr>';
 
   html += '</tbody></table></div>';
   el.innerHTML = html;
@@ -1951,16 +2382,36 @@ async function _saveToD1Impl() {
   if (appMode !== 'admin' || !authToken) return;
   const daily = state.dailyData;
   const tempUsage = state.dailyUsage;
+  const tempMix = state.inpatientMix;
+  const tempOutpatient = state.outpatientData;
   let dataStr = '';
   updateSyncBadge('syncing');
   try {
     state.dailyData = {};
     state.dailyUsage = [];
+    state.inpatientMix = [];
+    state.outpatientData = [];
     state._dataType = appDataType; // 서버 사이드 타입 검증용
     dataStr = JSON.stringify(state);
     var dKeys = Object.keys(daily).sort();
     var trimmedDaily = {};
-    dKeys.slice(Math.max(0, dKeys.length - 7)).forEach(function(k) { trimmedDaily[k] = daily[k]; });
+    dKeys.slice(Math.max(0, dKeys.length - 40)).forEach(function(k) { trimmedDaily[k] = daily[k]; });
+    // 장기 통계 배치: state.dailyData의 모든 날짜에 대해 AM/PM 집계 계산
+    var statsBatch = [];
+    dKeys.forEach(function(k) {
+      var dd = daily[k] || {};
+      if ((dd.inpatientMix && dd.inpatientMix.length > 0) || (dd.outpatientData && dd.outpatientData.length > 0)) {
+        statsBatch.push({ date: k, stats: buildDailyStatsFull(dd.inpatientMix, dd.outpatientData) });
+      }
+    });
+    // 오늘(메모리) 데이터도 포함 — 단, dailyData[wdToday]에 실제 업로드 흔적이 있을 때만
+    var wdToday = getWorkDate();
+    var todayUploaded = daily[wdToday] && ((daily[wdToday].inpatientMix && daily[wdToday].inpatientMix.length > 0) || (daily[wdToday].outpatientData && daily[wdToday].outpatientData.length > 0));
+    if (todayUploaded && !statsBatch.some(function(s) { return s.date === wdToday; })) {
+      if ((state.inpatientMix && state.inpatientMix.length > 0) || (state.outpatientData && state.outpatientData.length > 0)) {
+        statsBatch.push({ date: wdToday, stats: buildDailyStatsFull(state.inpatientMix, state.outpatientData) });
+      }
+    }
     const res = await fetch(API_BASE + '/state', {
       method: 'PUT',
       headers: {
@@ -1972,6 +2423,7 @@ async function _saveToD1Impl() {
         data: dataStr,
         daily_data: JSON.stringify(trimmedDaily),
         chemo_stats: appDataType === 'chemo' ? JSON.stringify(buildChemoStats(getWorkDate())) : undefined,
+        daily_stats_batch: statsBatch.length > 0 ? JSON.stringify(statsBatch) : undefined,
       }),
     });
     if (!res.ok) {
@@ -1982,12 +2434,17 @@ async function _saveToD1Impl() {
     var now = new Date();
     var timeStr = now.getHours() + ':' + String(now.getMinutes()).padStart(2,'0');
     updateSyncBadge('ok', timeStr);
+    _longTermStatsCache = null; // 저장 성공 시 장기통계 캐시 무효화
+    // 통계 탭이 열려 있으면 재렌더 (처방의 매핑 변경 반영)
+    if (document.querySelector('#tab-stats.active') && typeof renderStats === 'function') renderStats();
   } catch (e) {
     console.warn('D1 저장 실패:', e);
     updateSyncBadge('fail', e.message);
   } finally {
     state.dailyData = daily;
     state.dailyUsage = tempUsage;
+    state.inpatientMix = tempMix;
+    state.outpatientData = tempOutpatient;
   }
 }
 
@@ -2084,7 +2541,8 @@ let state = {
   inventoryFileType: '', // '일반조제' 또는 '특수조제'
   forecastUsage: { from:'', to:'', items:[] }, // 수요예측용 기간 사용량
   surplusFixed: {}, // 약품별 고정 잉여 { [code]: qty } — 날짜 무관 영구 유지
-  statsDeptOrder: []  // 통계 진료과 표시 순서 (사용자 지정, DEFAULT_STATS_DEPT_ORDER 기반, 저장 시 모든 기간 적용)
+  doctorDeptMap: null, // {doctorName: deptCode} — null이면 BUILTIN 사용
+  customDepts: [] // [{code, name}] — 사용자 추가 진료과
 };
 let currentViewDate = ''; // 현재 조회 중인 날짜
 let sortStates = {}; // { "inv_code": "asc", "inv_name": "desc", ... }
@@ -2109,7 +2567,8 @@ function resetAllState() {
   state.inventoryFileType = '';
   state.forecastUsage = { from:'', to:'', items:[] };
   state.surplusFixed = {};
-  state.statsDeptOrder = [];
+  state.doctorDeptMap = null;
+  state.customDepts = [];
   // 2) 뷰 / 정렬
   currentViewDate = '';
   sortStates = {};
@@ -2118,7 +2577,9 @@ function resetAllState() {
   newsData = null;
   newsFilteredItems = [];
   newsScope = 'all';
-  _newsMatchCache = null;
+  _newsMatchCache = null; _newsItemMatchResults = {};
+  _longTermStatsCache = null;
+  if (typeof _newsFilterTimer !== 'undefined' && _newsFilterTimer) { clearTimeout(_newsFilterTimer); _newsFilterTimer = null; }
   newsCurrentPage = 1;
   newsExpandedIdx = -1;
   // 5) AI 챗봇 이력
@@ -2151,18 +2612,30 @@ function normalizeExcelTime(val) {
   if (val === null || val === undefined || val === '') return 0;
   if (typeof val === 'number') {
     if (val > 0 && val < 1) return val;
-    if (val >= 1 && Math.floor(val) !== val) {
-      var frac = val % 1;
-      if (frac > 0 && frac < 1) return frac;
+    if (val >= 1 && val <= 24) return (val === 24 ? 0 : val / 24);
+    if (val >= 100 && val <= 2400) {
+      var hh = Math.floor(val / 100), mm = val % 100;
+      if (mm >= 60 || hh > 24 || (hh === 24 && mm > 0)) return 0;
+      if (hh === 24 && mm === 0) return 0;
+      return (hh + mm / 60) / 24;
     }
-    if (val >= 1 && val < 24) return val / 24;
-    if (val >= 100 && val < 2400) return (Math.floor(val/100) + (val%100)/60) / 24;
+    // Excel datetime serial (날짜+시간) → 소수부만 추출
+    if (val > 24) {
+      var frac = val - Math.floor(val);
+      return frac > 0 ? frac : 0;
+    }
     return 0;
   }
   if (typeof val === 'string') {
     val = val.trim();
     var m = val.match(/(\d{1,2}):(\d{2})/);
-    if (m) return (parseInt(m[1]) + parseInt(m[2])/60) / 24;
+    if (m) {
+      var h = parseInt(m[1]), min = parseInt(m[2]);
+      if ((val.indexOf('오후') >= 0 || val.toUpperCase().indexOf('PM') >= 0) && h < 12) h += 12;
+      if ((val.indexOf('오전') >= 0 || val.toUpperCase().indexOf('AM') >= 0) && h === 12) h = 0;
+      if (h > 23 || min > 59) return 0;
+      return (h + min / 60) / 24;
+    }
     var n = parseFloat(val);
     if (!isNaN(n) && n > 0) return normalizeExcelTime(n);
   }
@@ -2610,6 +3083,7 @@ function parseInpatientMix(wb) {
         regNo: String(r['등록번호'] || '').trim(),
         dept: String(r['진료과'] || r['과'] || r['진료과명'] || r['주치의과'] || '').trim(),
         doctor: String(r['처방의'] || '').trim(),
+        bundleNo: String(r['묶음번호'] || r['묶음'] || r['처방번호'] || '').trim(),
         code: code,
         name: String(r['약품명'] || '').trim(),
         dose: parseFloat(r['투여량']) || 0,
@@ -2636,10 +3110,24 @@ function parseInpatientMix(wb) {
 function parseOutpatient(wb) {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const data = sheetToData(ws, ['환자명','약품코드','약품명'], '4.xlsx/' + wb.SheetNames[0]);
-  state.outpatientData = data.map(r => ({
+  // 진단용: 첫 행의 원본 컬럼 키 + 시간 관련 컬럼 값 저장
+  if (data.length > 0) {
+    window._outpatientFirstRowKeys = Object.keys(data[0]);
+    window._outpatientFirstRow = data[0];
+  }
+  // 수납 Y 아닌 행 제외 (수납R = 취소) - 원본 데이터에서 필터링
+  const filteredData = data.filter(r => {
+    if (!String(r['약품코드'] || '').trim()) return false;
+    var sunapVal = String(r['수납'] || r['수납구분'] || r['수납여부'] || r['수납상태'] || '').trim();
+    if (sunapVal && sunapVal.toUpperCase() !== 'Y') return false;
+    return true;
+  });
+  state.outpatientData = filteredData.map(r => ({
     patient: String(r['환자명'] || '').trim(),
     regNo: String(r['등록번호'] || '').trim(),
     dept: String(r['진료과'] || r['과'] || r['진료과명'] || r['주치의과'] || '').trim(),
+    doctor: String(r['처방의'] || r['주치의'] || r['의사'] || '').trim(),
+    bundleNo: String(r['묶음번호'] || r['묶음'] || r['처방번호'] || '').trim(),
     code: String(r['약품코드'] || '').trim(),
     name: String(r['약품명'] || '').trim(),
     dosePerTime: parseFloat(r['1회량']) || 0,
@@ -2652,7 +3140,7 @@ function parseOutpatient(wb) {
       var t = getReceiptTimeFromRow(r);
       return t > 0 ? (t < 0.5 ? '오전' : '오후') : '';
     })()
-  })).filter(r => r.code);
+  }));
 }
 
 // PHS 파일 파싱 (마스터 목록 초기화)
@@ -2750,6 +3238,19 @@ function isVehicle(code) {
   return false;
 }
 
+// 외래 1행의 "당일 사용량" 환산 (하루 보고서 업로드 시 일수/총량 오해 방지)
+// 1회량 × 회수 우선, 없으면 총량/일수로 1일분 계산, 여전히 0이면 1(스케줄 1건 = 1사용)
+function getOutpatientDailyQty(r) {
+  if (!r) return 0;
+  const dose = parseFloat(r.dosePerTime) || 0;
+  const fr = parseFloat(r.freq) || 1;
+  if (dose > 0) return dose * fr;
+  const tot = parseFloat(r.totalQty) || 0;
+  const dy = parseFloat(r.days) || 1;
+  if (tot > 0) return (dy > 1 ? tot / dy : tot);
+  return 1;
+}
+
 // ============================================================
 // 잉여 약물 계산
 // ============================================================
@@ -2780,11 +3281,11 @@ function calculateSurplus() {
   // 외래 데이터 처리
   state.outpatientData.forEach(r => {
     if (isVehicle(r.code)) return;
-    const fracVia = r.dosePerTime > 0 ? r.dosePerTime : r.totalQty;
+    const qty = getOutpatientDailyQty(r);
     if (!drugPatients[r.code]) drugPatients[r.code] = { name: r.name, patients: [] };
     const existing = drugPatients[r.code].patients.find(p => p.name === r.patient);
-    if (existing) { existing.fracVia += fracVia; existing.totalVia += r.totalQty; }
-    else drugPatients[r.code].patients.push({ name: r.patient, fracVia, totalVia: r.totalQty, category: '외래' });
+    if (existing) { existing.fracVia += qty; existing.totalVia += qty; }
+    else drugPatients[r.code].patients.push({ name: r.patient, fracVia: qty, totalVia: qty, category: '외래' });
   });
 
   // 현재 타입의 마스터만 필터링
@@ -2867,7 +3368,10 @@ function updateForecastUploadStatus() {
 
 function getDemandForecast() {
   const fu = state.forecastUsage;
-  if (!fu || !fu.from || !fu.items || fu.items.length === 0) return [];
+  if (!fu || !fu.from || !fu.items || fu.items.length === 0) {
+    window._forecastFilterDebug = { total: 0, shown: 0, hidden: [], filtered: [] };
+    return [];
+  }
 
   // 기간 일수 계산
   const fromDate = new Date(fu.from);
@@ -2883,31 +3387,69 @@ function getDemandForecast() {
   }
 
   // 실재고 매핑 + 물품코드(barcode) 매핑
+  // realInvMap: 대표물품코드(EDI) → realQty
+  // realInvByBarcode: 물품코드(barcode) → realQty (수요예측 파일의 약품코드가 물품코드인 경우 fallback)
   const realInvMap = {};
+  const sysInvMap = {};
   const barcodeMap = {};
-  getRealInventory().forEach(r => { realInvMap[r.code] = r.realQty; barcodeMap[r.code] = r.barcode || ''; });
+  const realInvByBarcode = {};
+  const sysInvByBarcode = {};
+  getRealInventory().forEach(r => {
+    realInvMap[r.code] = r.realQty;
+    sysInvMap[r.code] = r.systemQty;
+    barcodeMap[r.code] = r.barcode || '';
+    if (r.barcode) {
+      realInvByBarcode[r.barcode] = r.realQty;
+      sysInvByBarcode[r.barcode] = r.systemQty;
+    }
+  });
+  // 역방향 매핑: barcode → 대표물품코드 (masterCodes 조회용)
+  const barcodeToCode = {};
+  Object.entries(barcodeMap).forEach(([code, bc]) => { if (bc) barcodeToCode[bc] = code; });
 
   // 현재 타입의 마스터만 필터링
   const masterCodes = getCurrentMasterCodes();
 
+  const hiddenSet = new Set(state.hiddenDrugs || []);
   const results = [];
+  const debug = { total: fu.items.length, shown: 0, hidden: [], filtered: [] };
   fu.items.forEach(item => {
-    if (masterCodes.size > 0 && !masterCodes.has(item.code)) return;
+    // masterCodes는 대표물품코드 기준. item.code가 물품코드(barcode)인 경우도 허용
+    const resolvedCode = masterCodes.has(item.code) ? item.code : (barcodeToCode[item.code] || item.code);
+    const allowedByMaster = masterCodes.size === 0 || masterCodes.has(resolvedCode) || masterCodes.has(item.code);
+    const allowedByChemoSet = appDataType === 'chemo' && (ANTICANCER_CODES.has(item.code) || ANTICANCER_CODES.has(resolvedCode));
+    if (!(allowedByMaster || allowedByChemoSet)) {
+      debug.filtered.push({ code: item.code, name: item.name, resolvedCode: resolvedCode });
+      return;
+    }
+    if (hiddenSet.has(item.code) || hiddenSet.has(resolvedCode)) {
+      debug.hidden.push({ code: item.code, name: item.name, resolvedCode: resolvedCode });
+      return;
+    }
     const dailyAvg = item.total / periodDays;
     const monthlyAvg = dailyAvg * 30;
-    const currentStock = realInvMap[item.code] || 0;
+    // 대표물품코드로 먼저 조회, 없으면 물품코드(barcode)로 fallback
+    const currentStock = realInvMap[item.code] !== undefined ? realInvMap[item.code]
+      : (realInvMap[resolvedCode] !== undefined ? realInvMap[resolvedCode]
+      : (realInvByBarcode[item.code] !== undefined ? realInvByBarcode[item.code] : 0));
+    const systemStock = sysInvMap[item.code] !== undefined ? sysInvMap[item.code]
+      : (sysInvMap[resolvedCode] !== undefined ? sysInvMap[resolvedCode]
+      : (sysInvByBarcode[item.code] !== undefined ? sysInvByBarcode[item.code] : 0));
     const queryNeed = queryDays > 0 ? Math.ceil(dailyAvg * queryDays) : 0;
     const diff = queryDays > 0 ? currentStock - queryNeed : currentStock - Math.ceil(monthlyAvg);
+    const diffSystem = queryDays > 0 ? systemStock - queryNeed : systemStock - Math.ceil(monthlyAvg);
 
     results.push({
-      code: item.code, barcode: barcodeMap[item.code] || item.code, name: item.name,
+      code: item.code, barcode: barcodeMap[item.code] || barcodeMap[resolvedCode] || (/^\d+$/.test(item.code) ? item.code : '') || item.code, name: item.name,
       periodTotal: item.total,
       dailyAvg: parseFloat(dailyAvg.toFixed(1)),
       monthlyAvg: Math.round(monthlyAvg),
-      currentStock, queryNeed, diff,
+      systemStock, currentStock, queryNeed, diff, diffSystem,
       status: diff < 0 ? 'shortage' : diff <= 2 ? 'tight' : 'ok'
     });
+    debug.shown++;
   });
+  window._forecastFilterDebug = debug;
   return results.sort((a,b) => a.diff - b.diff);
 }
 
@@ -2929,16 +3471,17 @@ function getCurrentMasterCodes() {
 // 현재 모드의 마스터에 속하는 제로관리약만 반환 (모드 오염 방지)
 function getFilteredZeroDrugs() {
   const masterCodes = getCurrentMasterCodes();
-  if (masterCodes.size > 0) {
-    return state.zeroDrugs.filter(z => masterCodes.has(z.drugCode));
-  }
-  // 마스터 미설정 시: ANTICANCER_CODES로 역필터링
   if (appDataType === 'general') {
-    // 일반약 모드 → 항암제 코드 제외
+    // 일반약 모드 → 항암제 코드 제외 (마스터에 있어도, 없어도)
     return state.zeroDrugs.filter(z => !ANTICANCER_CODES.has(z.drugCode));
   }
-  // 항암제 모드 → 항암제 코드만 표시
-  return state.zeroDrugs.filter(z => ANTICANCER_CODES.has(z.drugCode));
+  // 항암제 모드: drugMaster + BUILTIN_DRUGS + ANTICANCER_CODES 합집합
+  // (등록 드롭다운과 동일한 풀을 봐야 등록 후에도 표시됨)
+  const allowed = new Set();
+  masterCodes.forEach(c => allowed.add(c));
+  if (typeof BUILTIN_DRUGS !== 'undefined') BUILTIN_DRUGS.forEach(d => allowed.add(d.code));
+  ANTICANCER_CODES.forEach(c => allowed.add(c));
+  return state.zeroDrugs.filter(z => allowed.has(z.drugCode));
 }
 
 function getFilteredInventory() {
@@ -3001,11 +3544,11 @@ function getUsageMap() {
     // 사용량 파일 없으면 입원MIX + 외래집계 사용
     state.inpatientMix.forEach(r => {
       if (isVehicle(r.code)) return;
-      map[r.code] = (map[r.code] || 0) + (r.totalQty || 0);
+      map[r.code] = (map[r.code] || 0) + roundChargeableVials(r.totalQty || 0);
     });
     state.outpatientData.forEach(r => {
       if (isVehicle(r.code)) return;
-      map[r.code] = (map[r.code] || 0) + (r.totalQty || 0);
+      map[r.code] = (map[r.code] || 0) + roundChargeableVials(getOutpatientDailyQty(r));
     });
   }
   return map;
@@ -3110,40 +3653,50 @@ function renderDashboard() {
   const invMap = {};
   try { getRealInventory().forEach(r => { invMap[r.code] = r.realQty; }); } catch(e) {}
 
-  // 환자별 그룹핑
-  const patientMap = {};
+  // 섹션별(지나감/오늘/예정) → 환자별 그룹핑
+  // 같은 환자라도 Day별 daysLeft에 따라 여러 섹션에 나눠 표시
+  const buckets = { past: {}, today: {}, soon: {} };
+  function bucketOf(dl) { return dl < 0 ? 'past' : dl === 0 ? 'today' : 'soon'; }
   zeroAlerts.forEach(a => {
-    const key = a.patient;
-    if (!patientMap[key]) patientMap[key] = { patient: a.patient, drugs: [], daysLeft: a.daysLeft, nextDate: a.nextDate, memo: '', memoDate: '' };
-    // 메모 찾기
-    const zd = (state.zeroDrugs || []).find(z => z.patient === a.patient && z.drugCode === a.drugCode);
-    if (zd && zd.memo && !patientMap[key].memo) { patientMap[key].memo = zd.memo; patientMap[key].memoDate = zd.memoDate || ''; }
+    const bk = bucketOf(a.daysLeft);
+    const map = buckets[bk];
+    const key = a.patient + '|' + (a.regNo || '');
+    if (!map[key]) map[key] = { patient: a.patient, regNo: a.regNo || '', drugs: [], daysLeft: a.daysLeft, nextDate: a.nextDate, memo: '', memoDate: '' };
+    const zd = (state.zeroDrugs || []).find(z => z.patient === a.patient && (z.regNo || '') === (a.regNo || '') && z.drugCode === a.drugCode);
+    if (zd && zd.memo && !map[key].memo) { map[key].memo = zd.memo; map[key].memoDate = zd.memoDate || ''; }
     const stockQty = invMap[a.drugCode];
-    patientMap[key].drugs.push({ drugName: a.drugName, needQty: a.needQty, stockQty, daysLeft: a.daysLeft, nextDate: a.nextDate });
-    if (a.daysLeft < patientMap[key].daysLeft) { patientMap[key].daysLeft = a.daysLeft; patientMap[key].nextDate = a.nextDate; }
+    map[key].drugs.push({ drugName: a.drugName, needQty: a.needQty, stockQty, daysLeft: a.daysLeft, nextDate: a.nextDate, dayNum: a.dayNum });
+    if (a.daysLeft < map[key].daysLeft) { map[key].daysLeft = a.daysLeft; map[key].nextDate = a.nextDate; }
   });
-  const patients = Object.values(patientMap);
-  const pastPats = patients.filter(p => p.daysLeft < 0).sort((a,b) => a.daysLeft - b.daysLeft);
-  const todayPats = patients.filter(p => p.daysLeft === 0);
-  const soonPats = patients.filter(p => p.daysLeft > 0).sort((a,b) => a.daysLeft - b.daysLeft);
+  const pastPats = Object.values(buckets.past).sort((a,b) => a.daysLeft - b.daysLeft);
+  const todayPats = Object.values(buckets.today);
+  const soonPats = Object.values(buckets.soon).sort((a,b) => a.daysLeft - b.daysLeft);
 
   function renderAlertItem(p) {
+    const safePatient = escapeHtml(p.patient || '');
+    const safeNextDate = escapeHtml(p.nextDate || '');
     let dateBadge = '';
     let cls = '';
     if (p.daysLeft < 0) { dateBadge = `<span class="date-badge past">D${p.daysLeft}</span>`; cls = 'past'; }
     else if (p.daysLeft === 0) { dateBadge = `<span class="date-badge today">D-Day</span>`; cls = 'today'; }
     else { dateBadge = `<span class="date-badge soon">D-${p.daysLeft}</span>`; cls = 'soon'; }
     let drugLines = p.drugs.map(d => {
+      const safeDrugName = escapeHtml(d.drugName || '');
       let stockStr = '';
       if (d.stockQty !== undefined) {
         const short = d.stockQty < d.needQty;
         const sc = d.stockQty <= 0 ? '#dc2626' : short ? '#b45309' : '#15803d';
         stockStr = ` <span class="stock-info">필요 <b>${d.needQty}</b> | 재고 <b style="color:${sc};">${d.stockQty}</b>${short ? ' <b style="color:#dc2626;">[부족]</b>' : ''}</span>`;
       }
-      return `<div class="drug-info">${d.drugName}${stockStr}</div>`;
+      const dayBadge = d.dayNum ? ` <span style="font-size:10px;color:#475569;background:#e2e8f0;padding:1px 5px;border-radius:3px;margin-left:3px;">D${d.dayNum}</span>` : '';
+      return `<div class="drug-info">${safeDrugName}${dayBadge}${stockStr}</div>`;
     }).join('');
-    let memoHtml = p.memo ? `<div class="memo-info">${p.memo}</div>` : '';
-    return `<div class="dash-alert-item"><div><span class="patient-name">${p.patient}</span>${dateBadge} <span style="font-size:11px;color:#64748b;">${p.nextDate}</span></div>${drugLines}${memoHtml}</div>`;
+    let memoHtml = p.memo ? `<div class="memo-info">${escapeHtml(p.memo)}</div>` : '';
+    const rawRegNo = String(p.regNo || '');
+    const safeRegNo = escapeHtml(rawRegNo);
+    const attrRegNo = escapeHtml(rawRegNo);
+    const regNoHtml = safeRegNo ? ` <span style="font-size:11px;color:#64748b;margin-left:4px;">(${safeRegNo})</span><button data-regno="${attrRegNo}" onclick="navigator.clipboard.writeText(this.dataset.regno);this.textContent='V';setTimeout(()=>this.textContent='C',1000)" style="margin-left:3px;padding:1px 5px;border:1px solid #cbd5e1;border-radius:3px;background:#f8fafc;cursor:pointer;font-size:10px;color:#475569;" title="등록번호 복사">C</button>` : '';
+    return `<div class="dash-alert-item"><div><span class="patient-name">${safePatient}</span>${regNoHtml}${dateBadge} <span style="font-size:11px;color:#64748b;">${safeNextDate}</span></div>${drugLines}${memoHtml}</div>`;
   }
 
   function renderGroup(label, icon, cls, items) {
@@ -3284,19 +3837,17 @@ function renderUsage() {
   const usageMap = {}; // { code: { code, name, inpatient, outpatient } }
 
   // 입원MIX 집계 (수액/용매 제외)
-  // 각 환자의 fractional vial을 개별 올림 처리 (4.63 via → 5 via, 0.37 via → 1 via)
   state.inpatientMix.forEach(r => {
     if (isVehicle(r.code)) return;
     if (!usageMap[r.code]) usageMap[r.code] = { code:r.code, name:r.name, inpatient:0, outpatient:0 };
-    usageMap[r.code].inpatient += Math.ceil(r.totalQty || 0);
+    usageMap[r.code].inpatient += roundChargeableVials(r.totalQty || 0);
   });
 
   // 외래집계 집계
-  // 각 환자의 fractional vial을 개별 올림 처리 (4.63 via → 5 via, 0.37 via → 1 via)
   state.outpatientData.forEach(r => {
     if (isVehicle(r.code)) return;
     if (!usageMap[r.code]) usageMap[r.code] = { code:r.code, name:r.name, inpatient:0, outpatient:0 };
-    usageMap[r.code].outpatient += Math.ceil(r.totalQty || 0);
+    usageMap[r.code].outpatient += roundChargeableVials(getOutpatientDailyQty(r));
   });
 
   let usageData = Object.values(usageMap).map(r => ({ ...r, total: r.inpatient + r.outpatient }));
@@ -3394,7 +3945,7 @@ function renderForecast() {
   const fu = state.forecastUsage;
 
   if (forecast.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="padding:20px;color:#94a3b8;">대시보드에서 수요예측용 사용량 기간을 설정하고 파일을 업로드하세요.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="text-center" style="padding:20px;color:#94a3b8;">대시보드에서 수요예측용 사용량 기간을 설정하고 파일을 업로드하세요.</td></tr>';
     if (infoEl) infoEl.textContent = '';
     return;
   }
@@ -3409,37 +3960,203 @@ function renderForecast() {
       const qDays = Math.round((new Date(qTo) - new Date(qFrom)) / 86400000) + 1;
       info += '  |  조회기간: ' + qFrom + ' ~ ' + qTo + ' (' + qDays + '일)';
     }
+    const dbg = window._forecastFilterDebug || { total: (fu.items || []).length, shown: forecast.length, hidden: [], filtered: [] };
+    const hiddenCount = (dbg.hidden || []).length;
+    const filteredCount = (dbg.filtered || []).length;
+    info += '  |  표시 ' + (dbg.shown || forecast.length) + '/' + (dbg.total || (fu.items || []).length) + '품목';
+    if (hiddenCount > 0) info += ' (숨김 ' + hiddenCount + ')';
+    if (filteredCount > 0) {
+      const preview = dbg.filtered.slice(0, 3).map(function(x){ return x.name || x.code; }).join(', ');
+      info += '  |  필터제외 ' + filteredCount + '품목' + (preview ? ' [' + preview + (filteredCount > 3 ? ' 외' : '') + ']' : '');
+    }
     infoEl.textContent = info;
   }
 
   forecast = applySortToArray(forecast, 'forecast');
   tbody.innerHTML = forecast.map(f => {
     const cls = f.status === 'shortage' ? 'text-red font-bold' : f.status === 'tight' ? 'text-blue' : '';
+    const clsSys = f.diffSystem < 0 ? 'text-red font-bold' : f.diffSystem <= 2 ? 'text-blue' : '';
     return `<tr>
       <td>${f.code}</td><td>${f.name}</td>
       <td class="num">${f.periodTotal}</td>
       <td class="num">${f.dailyAvg}</td>
       <td class="num">${f.monthlyAvg}</td>
+      <td class="num">${f.systemStock}</td>
       <td class="num stock-highlight">${f.currentStock}</td>
       <td class="num">${f.queryNeed || '-'}</td>
+      <td class="num ${clsSys}">${f.diffSystem > 0 ? '+' : ''}${f.diffSystem}</td>
       <td class="num ${cls}">${f.diff > 0 ? '+' : ''}${f.diff}</td>
       <td>${f.status === 'shortage' ? '<span class="badge badge-red">부족</span>' : f.status === 'tight' ? '<span class="badge badge-yellow">주의</span>' : '<span class="badge badge-green">정상</span>'}</td>
       <td><input type="number" class="order-input" data-code="${f.code}" data-barcode="${f.barcode}" min="0" value=""></td>
+      <td class="text-center"><button class="btn btn-secondary btn-sm forecast-hide-btn" data-code="${f.code}" title="숨기기" style="padding:2px 6px;font-size:11px;">숨김</button></td>
     </tr>`;
   }).join('');
+  tbody.querySelectorAll('.forecast-hide-btn').forEach(btn => {
+    btn.addEventListener('click', () => { hideDrug(btn.dataset.code); renderForecast(); });
+  });
+
+  // 숨긴 약품 카드
+  const hiddenSet = new Set(state.hiddenDrugs || []);
+  const fhCard = document.getElementById('forecastHiddenCard');
+  const fhBody = document.getElementById('forecastHiddenBody');
+  if (fhCard && fhBody) {
+    // forecastUsage에서 숨긴 약품 목록 추출
+    const barcodeToCode = {};
+    getRealInventory().forEach(r => {
+      if (r.barcode) barcodeToCode[r.barcode] = r.code;
+    });
+    const hiddenItems = (fu.items || []).filter(i => {
+      const resolvedCode = barcodeToCode[i.code] || i.code;
+      return hiddenSet.has(i.code) || hiddenSet.has(resolvedCode);
+    });
+    if (hiddenItems.length === 0) {
+      fhCard.style.display = 'none';
+    } else {
+      fhCard.style.display = 'block';
+      fhBody.innerHTML = hiddenItems.map(i => `<tr>
+        <td>${i.code}</td><td>${i.name}</td>
+        <td class="text-center"><button class="btn btn-success btn-sm" onclick="unhideDrug('${i.code}');renderForecast();" style="padding:2px 8px;font-size:11px;">복원</button></td>
+      </tr>`).join('');
+    }
+  }
 }
 
 // ============================================================
 // 제로관리약
 // ============================================================
+// YYYY-MM-DD를 로컬 타임으로 파싱 (UTC 오프바이원 방지)
+function parseLocalYmd(ymd) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+// 현재 주기에서 특정 Day의 실제 날짜 (개별 이동 오버라이드 반영)
+function getDayDate(z, dayNum) {
+  if (z && z.dayDates && z.dayDates[dayNum]) return z.dayDates[dayNum];
+  if (!z || !z.nextDate) return null;
+  const d = parseLocalYmd(z.nextDate);
+  d.setDate(d.getDate() + (dayNum - 1));
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+// 제로관리약의 모든 예정 투여일 펼치기
+// lastDate/nextDate 기준으로 전후 여러 주기(±3주기)까지 포함
+function expandZeroDrugDates(z) {
+  const offsets = (getDayList(z) || [1]).map(d => d - 1);
+  const cycleWeeks = z.cycleWeeks || 3;
+  const cycleDays = cycleWeeks * 7;
+  function addDays(ymd, n) {
+    const d = parseLocalYmd(ymd);
+    d.setDate(d.getDate() + n);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  const dates = new Set();
+  [z.lastDate, z.nextDate].forEach(base => {
+    if (!base) return;
+    // 전후 3주기까지 iterate — 짧은 주기(1주)에서도 [-14,+7] 윈도우 커버
+    for (let c = -3; c <= 3; c++) {
+      offsets.forEach(off => dates.add(addDays(base, c * cycleDays + off)));
+    }
+  });
+  return Array.from(dates).sort();
+}
+
+// 제로관리약 스키마 정리 마이그레이션 (idempotent, _zv2 플래그로 1회만 실행)
+// 목표:
+//  - nextDate = 현재 주기 D1, lastDate = 이전 주기 D1
+//  - donedays = 현재 주기에서 실제로 완료된 Day 번호만 유지
+//  - 직전 잘못된 마이그레이션으로 오염된 donedays 는 전부 초기화
+//    (사용자는 이전에 확정된 Day 를 카드/달력에서 다시 체크할 수 있음)
+//  - 자동 완료(auto-done) 로직 전면 제거 → 지나간 미투약 Day 는 알람에 남음
+function migrateZeroDrugDonedays() {
+  if (!state.zeroDrugs || !state.zeroDrugs.length) return;
+  let changed = false;
+  function ymd(d) { return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+  const todayStr = today();
+
+  state.zeroDrugs.forEach(z => {
+    if (z._zv2) return; // 이미 마이그레이션됨
+    if (!z.nextDate && !z.lastDate) { z._zv2 = true; changed = true; return; }
+
+    try {
+      const dayList = getDayList(z);
+      // pick 타입은 입력 순서가 섞일 수 있으므로 실제 최대값 사용
+      const maxDay = dayList.length ? Math.max.apply(null, dayList) : 1;
+      const cycleDays = (z.cycleWeeks || 3) * 7;
+
+      // 오염 가능성이 있는 donedays 초기화
+      z.donedays = [];
+
+      // 현재 주기 결정: lastDate 주기가 아직 진행 중이면 그것을 현재 주기로 승격
+      let cycleStart = z.nextDate || z.lastDate;
+      if (z.lastDate) {
+        const lastEnd = parseLocalYmd(z.lastDate);
+        lastEnd.setDate(lastEnd.getDate() + (maxDay - 1));
+        if (z.lastDate <= todayStr && todayStr <= ymd(lastEnd)) {
+          cycleStart = z.lastDate;
+        }
+      }
+
+      z.nextDate = cycleStart;
+      const prev = parseLocalYmd(cycleStart); prev.setDate(prev.getDate() - cycleDays);
+      z.lastDate = ymd(prev);
+      z.pastUndone = [];
+      z._zv2 = true;
+      changed = true;
+    } catch (e) {
+      console.warn('zero migration skip (malformed record):', z && z.id, e);
+    }
+  });
+
+  if (changed) saveState();
+}
+
 function getZeroAlerts() {
   const now = new Date();
   now.setHours(0,0,0,0);
-  return getFilteredZeroDrugs().map(z => {
-    const diff = Math.floor((new Date(z.nextDate) - now) / 86400000);
-    const needQty = z.qty * getDayCount(z);
-    return { patient: z.patient, drugName: z.drugName, drugCode: z.drugCode, nextDate: z.nextDate, daysLeft: diff, needQty };
-  }).filter(a => a.daysLeft <= 7 && a.daysLeft >= -14).sort((a,b) => a.daysLeft - b.daysLeft);
+  const out = [];
+  getFilteredZeroDrugs().forEach(z => {
+    const dayList = getDayList(z);
+    const done = z.donedays || [];
+    function addDays(ymd, n) {
+      const d = parseLocalYmd(ymd);
+      d.setDate(d.getDate() + n);
+      return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    }
+    // 현재 주기(nextDate)의 미투약 Day만 알림에 추가
+    if (z.nextDate) {
+      dayList.forEach(dn => {
+        if (done.includes(dn)) return;
+        const dateStr = getDayDate(z, dn);
+        const diff = Math.floor((parseLocalYmd(dateStr) - now) / 86400000);
+        if (diff > 7 || diff < -30) return;
+        out.push({ patient: z.patient, regNo: z.regNo || '', drugName: z.drugName, drugCode: z.drugCode, nextDate: dateStr, daysLeft: diff, needQty: z.qty, dayNum: dn });
+      });
+    }
+  });
+  return out.sort((a,b) => a.daysLeft - b.daysLeft);
+}
+
+// 목록 표시용: 오늘 이후 가장 가까운 투여일 (없으면 nextDate)
+function getEffectiveNextDate(z) {
+  const todayStr = (function(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+  // 현재 주기(nextDate)에서 아직 투여 안 된 Day만 후보로
+  const dayList = getDayList(z);
+  const done = z.donedays || [];
+  function addDays(ymd, n) {
+    const d = parseLocalYmd(ymd);
+    d.setDate(d.getDate() + n);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  const candidates = [];
+  if (z.nextDate) {
+    dayList.forEach(dn => {
+      if (done.includes(dn)) return;
+      candidates.push(getDayDate(z, dn));
+    });
+  }
+  candidates.sort();
+  const upcoming = candidates.find(d => d >= todayStr);
+  return upcoming || candidates[0] || z.nextDate;
 }
 
 function toggleDayInput() {
@@ -3475,11 +4192,19 @@ function addZeroDrug() {
   const drugCode = drugSel.value;
   const drugName = document.getElementById('zDrugSearch').value.trim();
   if (!patient || !drugCode || !drugName || !lastDate) {
-    toast('환자명, 약품, 마지막투여일을 모두 입력하세요.', 'error'); return;
+    toast('환자명, 약품, 투여시작일을 모두 입력하세요.', 'error'); return;
   }
-  const nextDate = new Date(lastDate);
-  nextDate.setDate(nextDate.getDate() + cycle * 7);
-  var nd = nextDate.getFullYear()+'-'+String(nextDate.getMonth()+1).padStart(2,'0')+'-'+String(nextDate.getDate()).padStart(2,'0');
+  // 입력 날짜 = 이번 주기 D1 시작일
+  const tmpDayList = getDayList({ dayType, dayEnd, dayPick });
+  const todayStr = today();
+  const prev = parseLocalYmd(lastDate); prev.setDate(prev.getDate() - cycle * 7);
+  const actualLast = prev.getFullYear()+'-'+String(prev.getMonth()+1).padStart(2,'0')+'-'+String(prev.getDate()).padStart(2,'0');
+  const donedays = [];
+  tmpDayList.forEach(dn => {
+    const dt = parseLocalYmd(lastDate); dt.setDate(dt.getDate() + (dn - 1));
+    const dStr = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+    if (dStr <= todayStr) donedays.push(dn);
+  });
   state.zeroDrugs.push({
     id: Date.now(),
     patient, regNo,
@@ -3488,8 +4213,11 @@ function addZeroDrug() {
     cycleWeeks: cycle,
     qty,
     dayType, dayEnd, dayPick,
-    lastDate,
-    nextDate: nd
+    lastDate: actualLast,
+    nextDate: lastDate,
+    donedays,
+    pastUndone: [],
+    _zv2: true
   });
   saveState();
   renderZeroDrugs();
@@ -3510,7 +4238,7 @@ function prefillAddDrug(id) {
   document.getElementById('zPatient').value = z.patient;
   document.getElementById('zRegNo').value = z.regNo || '';
   document.getElementById('zCycle').value = z.cycleWeeks;
-  document.getElementById('zLastDate').value = z.lastDate;
+  document.getElementById('zLastDate').value = z.nextDate || z.lastDate;
   document.getElementById('zDayType').value = z.dayType || 'single';
   document.getElementById('zDayEnd').value = z.dayEnd || 1;
   document.getElementById('zDayPick').value = z.dayPick || '';
@@ -3538,6 +4266,46 @@ function getDayList(z) {
   return [1];
 }
 
+// 주기 자동 이동: 모든 Day 완료 AND 오늘 > 이번 주기의 마지막 투여일이면 다음 주기로
+// 같은 날 안에서는 이동하지 않음 → 오늘 체크한 약이 달력에서 사라지지 않음
+function autoAdvanceCycle(z) {
+  if (!z || !z.nextDate) return false;
+  const dayList = getDayList(z);
+  if (!dayList.length) return false;
+  const done = z.donedays || [];
+  const allDone = dayList.every(d => done.includes(d));
+  if (!allDone) return false;
+  const todayStr = today();
+  // 개별 이동(dayDates) 반영하여 {dayNum, date} 목록 → 가장 늦은 실제 날짜 찾기
+  const resolved = dayList.map(dn => ({ dn, date: getDayDate(z, dn) })).filter(x => x.date);
+  if (!resolved.length) return false;
+  resolved.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  const lastEntry = resolved[resolved.length - 1];
+  const lastStr = lastEntry.date;
+  if (todayStr <= lastStr) return false; // 아직 이번 주기 마지막 날 안 지남
+  z.lastDate = z.nextDate;
+  // 다음 주기 D1 = 실제 마지막 투여일 + (cycleDays - (dayNum - 1))
+  // → 마지막 투여 요일이 그대로 주기 리듬에 반영됨
+  const cycleDays = (z.cycleWeeks || 3) * 7;
+  const nx = parseLocalYmd(lastStr);
+  nx.setDate(nx.getDate() + (cycleDays - (lastEntry.dn - 1)));
+  z.nextDate = nx.getFullYear()+'-'+String(nx.getMonth()+1).padStart(2,'0')+'-'+String(nx.getDate()).padStart(2,'0');
+  z.donedays = [];
+  z.dayDates = {}; // 새 주기 시작 → 오버라이드 초기화
+  return true;
+}
+
+function autoAdvanceAllCycles() {
+  if (!state.zeroDrugs) return false;
+  let changed = false;
+  state.zeroDrugs.forEach(z => {
+    // 한 번에 여러 주기가 지났을 수도 있으므로 반복 (최대 60회)
+    let iter = 0;
+    while (iter++ < 60 && autoAdvanceCycle(z)) changed = true;
+  });
+  return changed;
+}
+
 // 특정 Day 투여 체크
 function checkInDay(id, dayNum) {
   const z = state.zeroDrugs.find(d => d.id === id);
@@ -3551,16 +4319,12 @@ function checkInDay(id, dayNum) {
   const allDone = allDays.every(d => z.donedays.includes(d));
 
   if (allDone) {
-    // 모든 Day 완료 → 다음 주기로 이동
-    z.lastDate = z.nextDate;
-    const next = new Date(z.nextDate);
-    next.setDate(next.getDate() + z.cycleWeeks * 7);
-    z.nextDate = next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0')+'-'+String(next.getDate()).padStart(2,'0');
-    z.donedays = []; // 리셋
-    toast(z.patient + ' - ' + z.drugName + ' 전체 투여 완료! 다음 주기: ' + z.nextDate, 'success');
+    toast(z.patient + ' - ' + z.drugName + ' 전체 Day 완료! (주기 종료일 이후 자동 이동)', 'success');
   } else {
     toast(z.patient + ' - ' + z.drugName + ' D' + dayNum + ' 투여 완료! (잔여: ' + (allDays.length - z.donedays.length) + '일)', 'info');
   }
+  // 주기 종료일 이후면 바로 다음 주기로 이동
+  autoAdvanceCycle(z);
   saveState();
   renderZeroDrugs();
   renderDashboard();
@@ -3641,11 +4405,23 @@ function saveEditDrug(id) {
   z.dayType = document.getElementById('edt-' + id).value;
   z.dayEnd = parseInt(document.getElementById('ede-' + id).value) || 1;
   z.dayPick = document.getElementById('edp-' + id).value.trim();
-  z.lastDate = document.getElementById('eld-' + id).value || z.lastDate;
-  // 다음 주기 재계산
-  const next = new Date(z.lastDate);
-  next.setDate(next.getDate() + z.cycleWeeks * 7);
-  z.nextDate = next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0')+'-'+String(next.getDate()).padStart(2,'0');
+  // 입력값 = 이번 주기 D1 시작일
+  const startDate = document.getElementById('eld-' + id).value || z.nextDate || z.lastDate;
+  z.nextDate = startDate;
+  const prev = parseLocalYmd(startDate); prev.setDate(prev.getDate() - z.cycleWeeks * 7);
+  z.lastDate = prev.getFullYear()+'-'+String(prev.getMonth()+1).padStart(2,'0')+'-'+String(prev.getDate()).padStart(2,'0');
+  // 오늘까지 지난 Day는 자동 완료
+  const todayStr = today();
+  const dl = getDayList(z);
+  z.donedays = [];
+  dl.forEach(dn => {
+    const dt = parseLocalYmd(startDate); dt.setDate(dt.getDate() + (dn - 1));
+    const dStr = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+    if (dStr <= todayStr) z.donedays.push(dn);
+  });
+  z.pastUndone = [];
+  z.dayDates = {};
+  z._zv2 = true;
   saveState();
   renderZeroDrugs();
   toast(z.drugName + ' 수정 완료!', 'success');
@@ -3744,9 +4520,9 @@ function renderZeroDrugs() {
       if (aEng !== bEng) return aEng ? -1 : 1;
       return aName.localeCompare(bName);
     }
-    // 기본: 가장 빠른 nextDate 기준
-    const aMin = a.drugs.reduce((m,d) => d.nextDate < m ? d.nextDate : m, '9999');
-    const bMin = b.drugs.reduce((m,d) => d.nextDate < m ? d.nextDate : m, '9999');
+    // 기본: 가장 빠른 다음 투여일 기준
+    const aMin = a.drugs.reduce((m,d) => { const nd = getEffectiveNextDate(d); return nd < m ? nd : m; }, '9999');
+    const bMin = b.drugs.reduce((m,d) => { const nd = getEffectiveNextDate(d); return nd < m ? nd : m; }, '9999');
     return aMin.localeCompare(bMin);
   });
 
@@ -3759,8 +4535,8 @@ function renderZeroDrugs() {
   let html = '';
   groups.forEach(g => {
     // 환자 전체에서 가장 빠른 다음 투여일
-    const earliestNext = g.drugs.reduce((m,d) => d.nextDate < m ? d.nextDate : m, '9999');
-    const diff0 = Math.floor((new Date(earliestNext) - now) / 86400000);
+    const earliestNext = g.drugs.reduce((m,d) => { const nd = getEffectiveNextDate(d); return nd < m ? nd : m; }, '9999');
+    const diff0 = Math.floor((parseLocalYmd(earliestNext) - now) / 86400000);
     let groupCls = '';
     if (diff0 <= 0) groupCls = 'border-color:#fecaca;background:#fef2f2;';
     else if (diff0 <= 7) groupCls = 'border-color:#fde68a;background:#fffbeb;';
@@ -3785,7 +4561,8 @@ function renderZeroDrugs() {
     html += `<span style="font-weight:700;font-size:13px;">${g.patient}${memoIcon}</span>`;
     html += g.regNo ? ` <span style="color:#64748b;font-size:11px;">(${g.regNo})</span> <span style="cursor:pointer;font-size:10px;color:#3b82f6;" onclick="event.stopPropagation();copyRegNo(\'${g.regNo}\')" title="등록번호 복사">[복사]</span>` : '';
     let diffBadge = '';
-    if (diff0 <= 0) diffBadge = '<span class="badge badge-red">오늘/지남</span>';
+    if (diff0 < 0) diffBadge = `<span class="badge badge-red">${-diff0}일 지남</span>`;
+    else if (diff0 === 0) diffBadge = '<span class="badge badge-red">오늘</span>';
     else if (diff0 <= 7) diffBadge = `<span class="badge badge-yellow">${diff0}일 후</span>`;
     else diffBadge = `<span class="badge badge-green">${diff0}일 후</span>`;
     html += ` ${diffBadge}`;
@@ -3833,7 +4610,7 @@ function renderZeroDrugs() {
       html += `<option value="range"${z.dayType==='range'?' selected':''}>연속(D1~DN)</option>`;
       html += `<option value="pick"${z.dayType==='pick'?' selected':''}>선택(D1,D2..)</option>`;
       html += `</select>`;
-      html += `<label style="font-weight:600;">마지막일</label><input type="date" id="eld-${z.id}" value="${z.lastDate}" style="padding:3px 6px;font-size:12px;">`;
+      html += `<label style="font-weight:600;">시작일(D1)</label><input type="date" id="eld-${z.id}" value="${z.nextDate || z.lastDate}" style="padding:3px 6px;font-size:12px;">`;
       html += `<label style="font-weight:600;" id="edeLbl-${z.id}"${z.dayType==='range'?'':' style="display:none;"'}>끝Day</label>`;
       html += `<input type="number" id="ede-${z.id}" value="${z.dayEnd||1}" min="1" max="30" style="width:50px;padding:3px 6px;font-size:12px;${z.dayType==='range'?'':'display:none;'}">`;
       html += `<label style="font-weight:600;" id="edpLbl-${z.id}"${z.dayType==='pick'?'':' style="display:none;"'}>Day들</label>`;
@@ -3881,7 +4658,7 @@ function renderZeroDrugs() {
     html += `</div>`;
 
     // 메모 슬라이드 (환자 단위)
-    const memoText = g.drugs.map(d => d.memo).filter(m => m).join('\n') || '';
+    const memoText = [...new Set(g.drugs.map(d => d.memo).filter(m => m))].join('\n') || '';
     const memoDate = g.drugs.map(d => d.memoDate).filter(m => m).sort().pop() || '';
     html += `<div class="memo-slide" id="memo-${firstDrug.id}" style="border-top:none;">`;
     html += `<textarea id="memoText-${firstDrug.id}" placeholder="메모를 입력하세요...">${memoText}</textarea>`;
@@ -3904,6 +4681,7 @@ function renderZeroDrugs() {
 function renderSettings() {
   renderMasterList();
   renderHistoryTable();
+  renderDeptDoctorList();
 }
 
 let _masterType = '항암제'; // 현재 선택된 분류
@@ -3921,6 +4699,149 @@ function getAllMasterList() {
   const chemo = state.drugMaster.map(d => ({ ...d, _type: '항암제' }));
   const general = (state.generalDrugMaster || []).map(d => ({ ...d, _type: '일반약' }));
   return chemo.concat(general);
+}
+
+// ── 진료과/처방의 매핑 관리 ──
+function ensureDoctorDeptMapInit() {
+  if (!state.doctorDeptMap || Object.keys(state.doctorDeptMap).length === 0) {
+    state.doctorDeptMap = Object.assign({}, BUILTIN_DOCTOR_DEPT_MAP);
+  }
+  if (!state.customDepts) state.customDepts = [];
+}
+function renderDeptDoctorList() {
+  var el = document.getElementById('deptDoctorList');
+  if (!el) return;
+  ensureDoctorDeptMapInit();
+  var depts = getAllDeptList();
+  // 의사를 진료과별로 그룹핑
+  var byDept = {};
+  depts.forEach(function(d){ byDept[d.code] = []; });
+  Object.keys(state.doctorDeptMap).forEach(function(doc){
+    var dc = state.doctorDeptMap[doc];
+    if (!byDept[dc]) byDept[dc] = [];
+    byDept[dc].push(doc);
+  });
+  var html = '';
+  depts.forEach(function(d){
+    var docs = (byDept[d.code] || []).sort();
+    html += '<div style="border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;margin-bottom:8px;background:#f8fafc;">';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+    html += '<strong style="font-size:13px;color:#1e40af;">' + escapeHtml(d.code) + '</strong>';
+    html += '<span style="font-size:12px;color:#475569;">' + escapeHtml(d.name || '') + '</span>';
+    html += '<span style="font-size:11px;color:#94a3b8;">(' + docs.length + '명)</span>';
+    if (!d.builtin) {
+      html += '<button class="btn btn-sm btn-danger" style="margin-left:auto;padding:2px 8px;font-size:11px;" onclick="removeCustomDept(\'' + d.code + '\')">진료과 삭제</button>';
+    }
+    html += '</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">';
+    docs.forEach(function(doc){
+      html += '<span style="display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:12px;">';
+      html += escapeHtml(doc);
+      html += '<button onclick="removeDoctor(\'' + doc.replace(/'/g,"\\'") + '\')" style="border:none;background:none;color:#dc2626;cursor:pointer;font-size:14px;line-height:1;padding:0;">×</button>';
+      html += '</span>';
+    });
+    if (docs.length === 0) html += '<span style="font-size:11px;color:#94a3b8;">등록된 처방의 없음</span>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:4px;">';
+    html += '<input type="text" id="newDoc_' + d.code + '" placeholder="처방의 이름" style="flex:1;padding:3px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:4px;">';
+    html += '<button class="btn btn-sm" style="background:#059669;color:#fff;padding:3px 10px;font-size:12px;" onclick="addDoctor(\'' + d.code + '\')">추가</button>';
+    html += '</div>';
+    html += '</div>';
+  });
+  el.innerHTML = html;
+}
+function addCustomDept() {
+  ensureDoctorDeptMapInit();
+  var code = (document.getElementById('newDeptCode').value || '').trim().toUpperCase();
+  var name = (document.getElementById('newDeptName').value || '').trim();
+  if (!code || !name) { toast('진료과 코드와 이름을 입력하세요.', 'error'); return; }
+  if (BUILTIN_DEPT_NAMES[code] || (state.customDepts||[]).some(function(d){return d.code===code;})) {
+    toast('이미 존재하는 진료과 코드입니다.', 'error'); return;
+  }
+  state.customDepts.push({code:code, name:name});
+  document.getElementById('newDeptCode').value = '';
+  document.getElementById('newDeptName').value = '';
+  renderDeptDoctorList();
+  saveToD1();
+  toast('진료과 추가됨: ' + code, 'success');
+}
+function removeCustomDept(code) {
+  if (!confirm(code + ' 진료과를 삭제하시겠습니까?\n(소속 처방의 매핑도 함께 삭제됩니다)')) return;
+  state.customDepts = (state.customDepts||[]).filter(function(d){return d.code!==code;});
+  Object.keys(state.doctorDeptMap||{}).forEach(function(doc){
+    if (state.doctorDeptMap[doc] === code) delete state.doctorDeptMap[doc];
+  });
+  renderDeptDoctorList();
+  saveToD1();
+}
+function addDoctor(deptCode) {
+  ensureDoctorDeptMapInit();
+  var input = document.getElementById('newDoc_' + deptCode);
+  var name = (input && input.value || '').trim();
+  if (!name) { toast('처방의 이름을 입력하세요.', 'error'); return; }
+  if (state.doctorDeptMap[name] && state.doctorDeptMap[name] !== deptCode) {
+    if (!confirm(name + ' 은(는) 이미 ' + state.doctorDeptMap[name] + ' 에 등록되어 있습니다.\n' + deptCode + '로 이동하시겠습니까?')) return;
+  }
+  state.doctorDeptMap[name] = deptCode;
+  _longTermStatsCache = null; // 매핑 변경 시 즉시 통계 캐시 무효화
+  renderDeptDoctorList();
+  saveToD1();
+  if (typeof renderStats === 'function') renderStats();
+  toast('추가됨: ' + name + ' → ' + deptCode, 'success');
+}
+function debugOutpatientTime() {
+  var lines = [];
+  if (window._outpatientFirstRowKeys) {
+    lines.push('[4.xlsx 원본 컬럼명]');
+    lines.push(window._outpatientFirstRowKeys.join(' | '));
+    lines.push('');
+    lines.push('[첫 행 시간관련 후보값]');
+    var fr = window._outpatientFirstRow || {};
+    Object.keys(fr).forEach(function(k){
+      if (k.indexOf('시간')>=0 || k.indexOf('시각')>=0 || k.indexOf('일시')>=0 || k.indexOf('접수')>=0) {
+        lines.push(k + ' = ' + JSON.stringify(fr[k]));
+      }
+    });
+    lines.push('');
+  }
+  var od = state.outpatientData || [];
+  lines.push('[메모리 외래 데이터: ' + od.length + '건]');
+  if (od.length > 0) {
+    lines.push('필드 키: ' + Object.keys(od[0]).join(', '));
+    od.slice(0, 8).forEach(function(r, i){
+      lines.push((i+1) + '. rt=' + r.receiptTime + ', ampm=' + (r.ampm||'(없음)') + ', name=' + (r.name||'').slice(0,15));
+    });
+    var amCnt = od.filter(function(r){return r.ampm==='오전';}).length;
+    var pmCnt = od.filter(function(r){return r.ampm==='오후';}).length;
+    var noCnt = od.filter(function(r){return !r.ampm;}).length;
+    lines.push('');
+    lines.push('AM=' + amCnt + ', PM=' + pmCnt + ', 미분류=' + noCnt);
+  }
+  lines.push('');
+  // dailyData 마지막 날짜
+  var dates = Object.keys(state.dailyData||{}).sort();
+  if (dates.length > 0) {
+    var last = dates[dates.length-1];
+    var dod = (state.dailyData[last]||{}).outpatientData || [];
+    lines.push('[dailyData ' + last + ' 외래: ' + dod.length + '건]');
+    if (dod.length > 0) {
+      lines.push('필드 키: ' + Object.keys(dod[0]).join(', '));
+      dod.slice(0,3).forEach(function(r,i){
+        lines.push((i+1) + '. rt=' + r.receiptTime + ', ampm=' + (r.ampm||'(없음)'));
+      });
+    }
+  }
+  alert(lines.join('\n'));
+}
+
+function removeDoctor(name) {
+  ensureDoctorDeptMapInit();
+  if (!confirm(name + ' 삭제?')) return;
+  delete state.doctorDeptMap[name];
+  _longTermStatsCache = null;
+  renderDeptDoctorList();
+  saveToD1();
+  if (typeof renderStats === 'function') renderStats();
 }
 
 function renderMasterList() {
@@ -4153,7 +5074,7 @@ function extractKorBase(name) {
   return m ? m[1].replace(/주사액$|주사$|주$|정$|캡슐$|시럽$|크림$|연고$|과립$|현탁$|액$|산$/, '') : '';
 }
 
-// 뉴스 매칭 캐시 (renderNewsPage마다 초기화)
+// 뉴스 매칭 캐시 (마스터 변경 시에만 초기화)
 let _newsMatchCache = null;
 function buildNewsMatchCache() {
   // 마스터 + 현재고(inventory) 모두 사용 (마스터 미등록 시 재고로 fallback)
@@ -4184,8 +5105,12 @@ function buildNewsMatchCache() {
   }));
 }
 
+var _newsItemMatchResults = {};
 function getMatchedHospitalDrug(newsItem) {
   if (!newsItem || !newsItem.title) return null;
+  // item별 결과 캐싱
+  var cacheKey = newsItem.title + '|' + (newsItem.ediCode || '');
+  if (_newsItemMatchResults.hasOwnProperty(cacheKey)) return _newsItemMatchResults[cacheKey];
   if (!_newsMatchCache) _newsMatchCache = buildNewsMatchCache();
   const cache = _newsMatchCache;
   if (cache.length === 0) return null;
@@ -4202,15 +5127,13 @@ function getMatchedHospitalDrug(newsItem) {
   const ediMatch = (newsItem.summary || '').match(/EDI코드:\s*(\d{9,})/i);
   const newsEdi = ediMatch ? ediMatch[1] : '';
 
+  function _found(drug) { _newsItemMatchResults[cacheKey] = drug; return drug; }
+
   // 1단계: EDI코드 매칭 (가장 정확) - 9자리 이상 숫자만
   if (newsEdi && newsEdi.length >= 9) {
     for (const c of cache) {
       const drugEdi = String(c.ediCode || '').trim();
-      // EDI 코드는 정확히 일치해야 함
-      if (drugEdi.length >= 9 && drugEdi === newsEdi) {
-        console.log('[뉴스매칭] EDI 일치:', newsProductName, '→', c.drug.name, '(EDI:', newsEdi, ')');
-        return c.drug;
-      }
+      if (drugEdi.length >= 9 && drugEdi === newsEdi) return _found(c.drug);
     }
   }
 
@@ -4220,11 +5143,7 @@ function getMatchedHospitalDrug(newsItem) {
       if (!c.norm || c.norm.length < 5) continue;
       const short = newsNorm.length <= c.norm.length ? newsNorm : c.norm;
       const long = newsNorm.length > c.norm.length ? newsNorm : c.norm;
-      // 더 엄격한 매칭: 70% 이상 일치 + 최소 5자 이상
-      if (long.includes(short) && short.length >= 5 && short.length / long.length >= 0.7) {
-        console.log('[뉴스매칭] 정규화 일치:', newsProductName, '→', c.drug.name, '(norm:', short, '/', long, ')');
-        return c.drug;
-      }
+      if (long.includes(short) && short.length >= 5 && short.length / long.length >= 0.7) return _found(c.drug);
     }
   }
 
@@ -4234,11 +5153,7 @@ function getMatchedHospitalDrug(newsItem) {
       if (c.eng.length >= 6) {
         const short = newsEng.length <= c.eng.length ? newsEng : c.eng;
         const long = newsEng.length > c.eng.length ? newsEng : c.eng;
-        // 더 엄격한 매칭: 70% 이상 일치
-        if (long.startsWith(short) && short.length >= 6 && short.length / long.length >= 0.7) {
-          console.log('[뉴스매칭] 영문 일치:', newsProductName, '→', c.drug.name, '(eng:', short, '/', long, ')');
-          return c.drug;
-        }
+        if (long.startsWith(short) && short.length >= 6 && short.length / long.length >= 0.7) return _found(c.drug);
       }
     }
   }
@@ -4249,62 +5164,29 @@ function getMatchedHospitalDrug(newsItem) {
       if (c.kor.length >= 5) {
         const short = newsKor.length <= c.kor.length ? newsKor : c.kor;
         const long = newsKor.length > c.kor.length ? newsKor : c.kor;
-        if (long.includes(short) && short.length >= 5 && short.length / long.length >= 0.8) {
-          console.log('[뉴스매칭] 한글 일치:', newsProductName, '→', c.drug.name, '(kor:', short, '/', long, ')');
-          return c.drug;
-        }
+        if (long.includes(short) && short.length >= 5 && short.length / long.length >= 0.8) return _found(c.drug);
       }
     }
   }
 
   // 5단계: 한글-영문 교차 매칭 (사전 기반이므로 최소 길이 2자로 완화)
   if (newsKor.length >= 2) {
-    // 뉴스 한글명을 영문으로 변환하여 매칭
     const newsKorToEng = DRUG_NAME_MAP[newsKor] || '';
     for (const c of cache) {
-      // 방법 1: 원내 약품명에 뉴스 한글명이 포함되어 있는지 확인
-      if (c.fullName && c.fullName.includes(newsKor)) {
-        console.log('[뉴스매칭] 한글→전체명 일치:', newsProductName, '→', c.drug.name, '(kor:', newsKor, ')');
-        return c.drug;
-      }
-      // 방법 2: 뉴스 한글명을 영문으로 변환 후 원내 약품명과 비교
-      if (newsKorToEng && c.fullName.includes(newsKorToEng)) {
-        console.log('[뉴스매칭] 한글→영문 매핑:', newsProductName, '→', c.drug.name, '(kor:', newsKor, '→', newsKorToEng, ')');
-        return c.drug;
-      }
-      // 방법 3: 뉴스 한글명을 영문으로 변환 후 정규화된 약품명과 비교
-      if (newsKorToEng && c.norm.includes(newsKorToEng)) {
-        console.log('[뉴스매칭] 한글→영문 매핑(norm):', newsProductName, '→', c.drug.name, '(kor:', newsKor, '→', newsKorToEng, ')');
-        return c.drug;
-      }
+      if (newsKor.length >= 3 && c.fullName && c.fullName.includes(newsKor)) return _found(c.drug);
+      if (newsKorToEng && c.fullName.includes(newsKorToEng)) return _found(c.drug);
+      if (newsKorToEng && c.norm.includes(newsKorToEng)) return _found(c.drug);
     }
   }
   if (newsEng.length >= 6) {
     for (const c of cache) {
-      // 원내 약품명에 뉴스 영문명이 포함되어 있는지 확인
-      if (c.fullName && c.fullName.includes(newsEng)) {
-        console.log('[뉴스매칭] 영문→전체명 일치:', newsProductName, '→', c.drug.name, '(eng:', newsEng, ')');
-        return c.drug;
-      }
+      if (c.fullName && c.fullName.includes(newsEng)) return _found(c.drug);
     }
   }
 
-  // 6단계: 성분명(ingredient) 매칭 - 최소 길이 강화
-  for (const c of cache) {
-    if (!c.ingredient) continue;
-    // 한글 성분명: 최소 4자 이상
-    if (c.ingKor.length >= 4 && newsProductName.includes(c.ingKor)) {
-      console.log('[뉴스매칭] 성분(한글) 일치:', newsProductName, '→', c.drug.name, '(ing:', c.ingKor, ')');
-      return c.drug;
-    }
-    // 영문 성분명: 최소 8자 이상
-    if (c.ingEng.length >= 8 && newsLower.includes(c.ingEng)) {
-      console.log('[뉴스매칭] 성분(영문) 일치:', newsProductName, '→', c.drug.name, '(ing:', c.ingEng, ')');
-      return c.drug;
-    }
-  }
-
-  return null;
+  // 6단계: 성분명 매칭은 제거 — 같은 성분의 다른 상품끼리 오매칭됨
+  // (예: 엔시트라정 뉴스가 트리돌서방정과 매칭되는 문제)
+  return _found(null);
 }
 
 // 원내/원외 필터
@@ -4502,7 +5384,7 @@ function clearAllData() {
     inventory: [], dailyUsage: [], inpatientMix: [], outpatientData: [],
     usageHistory: [], manualSurplus: [], zeroDrugs: [], drugMaster: [], generalDrugMaster: [],
     uploadDates: { f1:'', f2:'', f3:'', f4:'' }, dailyData: {}, coldStorage: [], hiddenDrugs: [],
-    forecastUsage: { from:'', to:'', items:[] }, surplusFixed: {}, statsDeptOrder: []
+    forecastUsage: { from:'', to:'', items:[] }, statsDeptOrder: []
   };
   saveState();
   renderAll();
@@ -4536,8 +5418,8 @@ function exportForecast() {
   const ws = XLSX.utils.json_to_sheet(forecast.map(f => ({
     '약품코드': f.code, '약품명': f.name,
     '기간총사용량': f.periodTotal, '하루평균': f.dailyAvg, '월평균': f.monthlyAvg,
-    '실재고': f.currentStock, '조회기간필요': f.queryNeed || '',
-    '과부족': f.diff,
+    '전산재고': f.systemStock, '실재고': f.currentStock, '조회기간필요': f.queryNeed || '',
+    '과부족(전산)': f.diffSystem, '과부족(실재고)': f.diff,
     '상태': f.status === 'shortage' ? '부족' : f.status === 'tight' ? '주의' : '정상'
   })));
   const wb = XLSX.utils.book_new();
@@ -4545,7 +5427,6 @@ function exportForecast() {
   XLSX.writeFile(wb, '수요예측_' + today() + '.xlsx');
 }
 
-// ── 통계 탭 전용 엑셀 내보내기 (참조 양식과 동일한 진료과 순서 + 매트릭스 구조) ──
 function exportStatsDeptExcel() {
   try {
     if (typeof XLSX === 'undefined' || !XLSX.utils || typeof XLSX.writeFile !== 'function') {
@@ -4584,6 +5465,10 @@ function exportStatsDeptExcel() {
       drugDept[cname][dept].add(getStatsRxKey(r));
     });
 
+    var usedDepts = {};
+    Object.keys(drugDept).forEach(function(dn){
+      Object.keys(drugDept[dn]).forEach(function(d){ usedDepts[d] = 1; });
+    });
     var activeDepts = getPreferredDeptOrder();
     var label = (sd && sd.label) ? sd.label : today();
     var title = formatStatsReportTitle(label);
@@ -4591,92 +5476,54 @@ function exportStatsDeptExcel() {
     var lastDataRow = firstDataRow + DEFAULT_STATS_DRUG_ORDER.length - 1;
     var totalRowNum = lastDataRow + 1;
     var tpnRowNum = totalRowNum + 1;
-    var footerRowNum = tpnRowNum + 2;
-    var sumFirstCol = XLSX.utils.encode_col(1);
-    var sumLastCol = XLSX.utils.encode_col(activeDepts.length);
-    var outRxKeys = {};
-    fOut.forEach(function(r) { outRxKeys[getStatsRxKey(r)] = 1; });
-    var outRxCount = Object.keys(outRxKeys).length;
-
-    function fillWorksheet(ws) {
-      function setCell(addr, val, isFormula) {
-        var prev = ws[addr];
-        var prevS = prev && prev.s;
-        var cell;
-        if (isFormula) {
-          cell = { f: val, t: 'n' };
-        } else if (val === null || val === undefined || val === '') {
-          cell = { t: 'z' };
-        } else {
-          cell = { v: val, t: typeof val === 'number' ? 'n' : 's' };
-        }
-        if (prevS) cell.s = prevS;
-        ws[addr] = cell;
-      }
-
-      setCell('A1', title, false);
-      activeDepts.forEach(function(d, i) {
-        setCell(XLSX.utils.encode_col(i + 1) + '2', d, false);
-      });
-      setCell('M2', '합계', false);
-
-      DEFAULT_STATS_DRUG_ORDER.forEach(function(drug, idx) {
-        var excelRow = firstDataRow + idx;
-        setCell('A' + excelRow, drug, false);
-        activeDepts.forEach(function(d, i) {
-          var cnt = (drugDept[drug] && drugDept[drug][d]) ? drugDept[drug][d].size : 0;
-          setCell(XLSX.utils.encode_col(i + 1) + excelRow, cnt > 0 ? cnt : null, false);
-        });
-        setCell('M' + excelRow, 'SUM(' + sumFirstCol + excelRow + ':' + sumLastCol + excelRow + ')', true);
-      });
-
-      setCell('A' + totalRowNum, 'TOTAL', false);
-      activeDepts.forEach(function(d, i) {
-        var col = XLSX.utils.encode_col(i + 1);
-        setCell(col + totalRowNum, 'SUM(' + col + firstDataRow + ':' + col + lastDataRow + ')', true);
-      });
-      setCell('M' + totalRowNum, 'SUM(' + sumFirstCol + totalRowNum + ':' + sumLastCol + totalRowNum + ')', true);
-
-      setCell('A' + tpnRowNum, '특수TPN', false);
-      setCell('B' + tpnRowNum, 0, false);
-      for (var ti = 1; ti < activeDepts.length; ti++) {
-        setCell(XLSX.utils.encode_col(ti + 1) + tpnRowNum, null, false);
-      }
-      setCell('M' + tpnRowNum, 'SUM(' + sumFirstCol + tpnRowNum + ':' + sumLastCol + tpnRowNum + ')', true);
-      setCell('A' + footerRowNum, '외래주사실 :', false);
-      setCell('B' + footerRowNum, outRxCount > 0 ? (outRxCount + '건 ') : '', false);
-      applyStatsReportDesign(ws, {
-        lastDataRow: lastDataRow,
-        totalRow: totalRowNum - 1,
-        tpnRow: tpnRowNum - 1,
-        footerRow: footerRowNum - 1
-      });
-    }
 
     var aoa = [];
     aoa.push([title]);
     aoa.push([''].concat(activeDepts).concat(['합계']));
-    DEFAULT_STATS_DRUG_ORDER.forEach(function(drug) {
+
+    DEFAULT_STATS_DRUG_ORDER.forEach(function(drug, idx){
+      var excelRow = firstDataRow + idx;
       var row = [drug];
-      activeDepts.forEach(function(d) {
+      activeDepts.forEach(function(d){
         var cnt = (drugDept[drug] && drugDept[drug][d]) ? drugDept[drug][d].size : 0;
-        row.push(cnt > 0 ? cnt : '');
+        row.push(cnt || '');
       });
       row.push(null);
       aoa.push(row);
     });
+
     aoa.push(['TOTAL'].concat(new Array(activeDepts.length).fill(null)).concat([null]));
-    aoa.push(['특수TPN', 0].concat(new Array(activeDepts.length - 1).fill('')).concat([null]));
-    aoa.push(new Array(activeDepts.length + 2).fill(''));
-    aoa.push(['외래주사실 :', ''].concat(new Array(activeDepts.length).fill('')));
+    aoa.push(['특수TPN', '0건'].concat(new Array(activeDepts.length - 1).fill('')).concat([null]));
+    aoa.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
+    aoa.push(['외래주사실 :', '', '', '', '', '', '', '', '', '', '', '', '']);
+
     var wb = XLSX.utils.book_new();
     var ws = XLSX.utils.aoa_to_sheet(aoa);
-    fillWorksheet(ws);
+
+    DEFAULT_STATS_DRUG_ORDER.forEach(function(drug, idx){
+      var excelRow = firstDataRow + idx;
+      ws['M' + excelRow] = { f: 'SUM(B' + excelRow + ':K' + excelRow + ')', t: 'n' };
+    });
+
+    activeDepts.forEach(function(d, i){
+      var col = XLSX.utils.encode_col(i + 1);
+      ws[col + totalRowNum] = { f: 'SUM(' + col + firstDataRow + ':' + col + lastDataRow + ')', t: 'n' };
+    });
+    ws['M' + totalRowNum] = { f: 'SUM(B' + totalRowNum + ':K' + totalRowNum + ')', t: 'n' };
+    ws['M' + tpnRowNum] = { f: 'SUM(B' + tpnRowNum + ':K' + tpnRowNum + ')', t: 'n' };
+
+    applyStatsReportDesign(ws, {
+      lastDataRow: lastDataRow,
+      totalRow: totalRowNum - 1,
+      tpnRow: tpnRowNum - 1
+    });
+
     XLSX.utils.book_append_sheet(wb, ws, '항암제');
-    XLSX.writeFile(wb, formatStatsReportFilename(label), { cellStyles: true });
+    XLSX.writeFile(wb, formatStatsReportFilename(label));
+
     if (Object.keys(unmappedDrugs).length > 0) {
       console.warn('exportStatsDeptExcel: unmapped drugs (not in 60-row template):', Object.keys(unmappedDrugs).sort());
-      var um = '보고용 양식 60개 약품 외 ' + Object.keys(unmappedDrugs).length + '개는 엑셀 행에 없음 (화면 통계에는 포함)';
+      var um = '매핑되지 않은 약품 ' + Object.keys(unmappedDrugs).length + '개는 엑셀에서 제외됨 (F12 콘솔 확인)';
       if (typeof toast === 'function') toast(um, 'warning');
     }
     if (typeof toast === 'function') toast('보고용 양식 엑셀 다운로드 완료', 'success');
@@ -4690,6 +5537,7 @@ function exportStatsDeptExcel() {
     }
   }
 }
+
 
 // ============================================================
 // 공통
@@ -4791,10 +5639,10 @@ function collectCalEvents(year, month) {
     const dayList = getDayList(z);
     const done = z.donedays || [];
     // 현재 주기
-    const baseDate = new Date(z.nextDate);
     dayList.forEach(d => {
-      const dt = new Date(baseDate); dt.setDate(dt.getDate() + (d - 1));
-      const dateStr = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+      const dateStr = getDayDate(z, d);
+      if (!dateStr) return;
+      const dt = parseLocalYmd(dateStr);
       if (dt.getFullYear() === year && dt.getMonth() === month) {
         if (!events[dateStr]) events[dateStr] = [];
         events[dateStr].push({ patient:z.patient, regNo:z.regNo||'', drugName:z.drugName, qty:z.qty, dayNum:d, done:done.includes(d), zid:z.id });
@@ -5000,6 +5848,39 @@ function calClickDate(toDate) {
     const dayList = getDayList(z);
     const cycleDays = (z.cycleWeeks || 3) * 7;
 
+    // 현재 주기에서 fromDate에 해당하는 Day를 먼저 찾음
+    let clickedDay = null;
+    for (const dn of dayList) {
+      if (getDayDate(z, dn) === fromDate) { clickedDay = dn; break; }
+    }
+    if (clickedDay !== null) {
+      const done = z.donedays || [];
+      if (done.includes(clickedDay)) {
+        console.log('[이동] D' + clickedDay + ' 이미 완료 — 건너뜀');
+        return;
+      }
+      if (done.length === 0) {
+        // 아무 Day도 체크 안 됨 → 전체 주기를 diffDays만큼 함께 이동
+        const nn = parseLocalYmd(z.nextDate); nn.setDate(nn.getDate() + diffDays);
+        z.nextDate = fmtD(nn);
+        if (z.dayDates) {
+          const nd = {};
+          Object.keys(z.dayDates).forEach(k => {
+            const d = parseLocalYmd(z.dayDates[k]); d.setDate(d.getDate() + diffDays);
+            nd[k] = fmtD(d);
+          });
+          z.dayDates = nd;
+        }
+        console.log('[이동] 현재주기 전체이동(미체크):', diffDays, '일');
+      } else {
+        // 체크된 Day 고정 → 클릭한 Day만 개별 오버라이드
+        if (!z.dayDates) z.dayDates = {};
+        z.dayDates[clickedDay] = toDate;
+        console.log('[이동] D' + clickedDay + ' 개별이동(체크된 Day 고정):', fromDate, '->', toDate);
+      }
+      return;
+    }
+
     // 다중 주기 탐색: nextDate에서 최대 10주기 전까지 역추적
     function findCycleContaining(baseDate, searchDate) {
       let base = new Date(baseDate);
@@ -5101,18 +5982,8 @@ function calToggleDose(patient, drugName, dayNum, isDone, isPast, pastCycleDate)
     } else {
       if (!z.donedays.includes(dayNum)) z.donedays.push(dayNum);
       toast(patient + ' D' + dayNum + ' 투여 완료!', 'success');
-
-      // 모든 Day 완료 시 → 다음 주기로 자동 이동
-      const allDone = dayList.every(d => z.donedays.includes(d));
-      if (allDone) {
-        const base = new Date(z.nextDate);
-        z.lastDate = z.nextDate;
-        const nextCycle = new Date(base);
-        nextCycle.setDate(nextCycle.getDate() + (z.cycleWeeks || 3) * 7);
-        z.nextDate = nextCycle.getFullYear() + '-' + String(nextCycle.getMonth()+1).padStart(2,'0') + '-' + String(nextCycle.getDate()).padStart(2,'0');
-        z.donedays = [];
-        toast(patient + ' 모든 Day 완료! 다음 주기: ' + z.nextDate, 'success');
-      }
+      // 이번 주기 마지막 날 지나 있으면 즉시 다음 주기로 이동
+      autoAdvanceCycle(z);
     }
   }
   saveState();
@@ -5315,9 +6186,9 @@ function exportInventoryCheck() {
     for (let i = 0; i < max; i++) {
       const l = left[i], r = right[i];
       html += '<tr>';
-      html += l ? `<td class="c">${l.name}</td><td class="c num">${l.realQty}</td>` : '<td class="c"></td><td class="c"></td>';
+      html += l ? `<td class="c">${l.name}</td><td class="c num">${l.systemQty}</td><td class="c num">${l.realQty}</td><td class="c num">${l.manualSurplus || ''}</td>` : '<td class="c"></td><td class="c num"></td><td class="c num"></td><td class="c num"></td>';
       html += '<td class="gap"></td>';
-      html += r ? `<td class="c">${r.name}</td><td class="c num">${r.realQty}</td>` : '<td class="c"></td><td class="c"></td>';
+      html += r ? `<td class="c">${r.name}</td><td class="c num">${r.systemQty}</td><td class="c num">${r.realQty}</td><td class="c num">${r.manualSurplus || ''}</td>` : '<td class="c"></td><td class="c num"></td><td class="c num"></td><td class="c num"></td>';
       html += '</tr>';
     }
     return html;
@@ -5352,7 +6223,7 @@ function exportInventoryCheck() {
   <div class="date-header">${invLabel} 재고조사 - 실온 보관 (${dateStr})</div>
   <h2>실온 보관 (${normalItems.length})</h2>
   <table>
-    <thead><tr><th>약이름</th><th style="width:50px;">실재고</th><th class="gap"></th><th>약이름</th><th style="width:50px;">실재고</th></tr></thead>
+    <thead><tr><th>약이름</th><th style="width:45px;">전산</th><th style="width:45px;">실재고</th><th style="width:45px;">잉여</th><th class="gap"></th><th>약이름</th><th style="width:45px;">전산</th><th style="width:45px;">실재고</th><th style="width:45px;">잉여</th></tr></thead>
     <tbody>${buildRows(normL, normR)}</tbody>
   </table>
 </div>
@@ -5360,7 +6231,7 @@ function exportInventoryCheck() {
   <div class="date-header">${invLabel} 재고조사 - 냉장 보관 (${dateStr})</div>
   <h2 class="cold-title">냉장 보관 (${coldItems.length})</h2>
   <table>
-    <thead><tr><th>약이름</th><th style="width:50px;">실재고</th><th class="gap"></th><th>약이름</th><th style="width:50px;">실재고</th></tr></thead>
+    <thead><tr><th>약이름</th><th style="width:45px;">전산</th><th style="width:45px;">실재고</th><th style="width:45px;">잉여</th><th class="gap"></th><th>약이름</th><th style="width:45px;">전산</th><th style="width:45px;">실재고</th><th style="width:45px;">잉여</th></tr></thead>
     <tbody>${buildRows(coldL, coldR)}</tbody>
   </table>
 </div>
@@ -5386,10 +6257,10 @@ function init() {
   if (!state.hiddenDrugs) state.hiddenDrugs = [];
   if (!state.manualSurplus) state.manualSurplus = [];
   if (!state.surplusFixed) state.surplusFixed = {};
-  // 오래된 dailyData 정리 (7일 이상)
+  // 오래된 dailyData 정리 (40일 이상)
   var dKeys = Object.keys(state.dailyData).sort();
-  if (dKeys.length > 7) {
-    dKeys.slice(0, dKeys.length - 7).forEach(function(k) { delete state.dailyData[k]; });
+  if (dKeys.length > 40) {
+    dKeys.slice(0, dKeys.length - 40).forEach(function(k) { delete state.dailyData[k]; });
   }
 
   // 오늘 날짜의 dailyData가 있으면 자동 로드
@@ -5398,17 +6269,23 @@ function init() {
     var dd = state.dailyData ? state.dailyData[todayStr] : null;
     if (dd && typeof dd === 'object') {
       if (dd.inventory) state.inventory = JSON.parse(JSON.stringify(dd.inventory));
-      if (dd.inpatientMix) state.inpatientMix = JSON.parse(JSON.stringify(dd.inpatientMix));
-      if (dd.outpatientData) state.outpatientData = JSON.parse(JSON.stringify(dd.outpatientData));
-      if (dd.dailyUsage) state.dailyUsage = JSON.parse(JSON.stringify(dd.dailyUsage));
+      // 오늘 dailyData에 해당 데이터가 있으면 복원, 없으면 비움 (이전 날짜 잔류 방지)
+      state.inpatientMix = dd.inpatientMix ? JSON.parse(JSON.stringify(dd.inpatientMix)) : [];
+      state.outpatientData = dd.outpatientData ? JSON.parse(JSON.stringify(dd.outpatientData)) : [];
+      state.dailyUsage = dd.dailyUsage ? JSON.parse(JSON.stringify(dd.dailyUsage)) : [];
       if (dd.inventoryFileType) state.inventoryFileType = dd.inventoryFileType;
       var udates = dd.uploadDates || {};
       state.uploadDates = {
         f1: udates.f1 || '',
-        f2: udates.f2 || '', // 사용량도 이제 저장됨
+        f2: udates.f2 || '',
         f3: udates.f3 || '',
         f4: udates.f4 || ''
       };
+    } else {
+      // 오늘 dailyData 자체가 없으면 사용량/MIX/외래 모두 비움
+      state.dailyUsage = [];
+      state.inpatientMix = [];
+      state.outpatientData = [];
     }
   } catch(e) { console.error('오늘 데이터 로드 실패:', e); }
   // inventoryFileType 초기화
@@ -5447,7 +6324,7 @@ async function loadNews(forceRefresh) {
   if (newsLoaded && !forceRefresh) {
     loadingEl.classList.add('hidden');
     // 매칭 캐시 초기화 (마스터 변경 반영)
-    _newsMatchCache = null;
+    _newsMatchCache = null; _newsItemMatchResults = {};
     applyNewsFilters();
     return;
   }
@@ -5500,7 +6377,7 @@ async function loadNews(forceRefresh) {
     newsLoaded = true; // 성공 시에만 캐시
 
     // 매칭 캐시 초기화
-    _newsMatchCache = null;
+    _newsMatchCache = null; _newsItemMatchResults = {};
     newsCurrentPage = 1;
     applyNewsFilters();
   } catch (e) {
@@ -5512,13 +6389,17 @@ async function loadNews(forceRefresh) {
   }
 }
 
+var _newsFilterTimer = null;
+function debouncedNewsFilter() {
+  clearTimeout(_newsFilterTimer);
+  _newsFilterTimer = setTimeout(applyNewsFilters, 250);
+}
 function applyNewsFilters() {
   if (!newsData || !newsData.items || newsData.items.length === 0) return;
   const filter = document.getElementById('newsFilter').value;
   const search = (document.getElementById('newsSearch').value || '').trim().toLowerCase();
 
-  // 매칭 캐시 초기화 (마스터 변경 반영)
-  _newsMatchCache = null;
+  // 매칭 캐시는 마스터 변경 시에만 초기화 (applyNewsFilters에서 매번 리셋하지 않음)
 
   let items = newsData.items;
   if (filter !== 'all') items = items.filter(n => n.category === filter);

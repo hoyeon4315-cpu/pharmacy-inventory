@@ -4,3 +4,21 @@
   Cache-Control: no-cache, must-revalidate
 /index.html
   Cache-Control: no-cache, must-revalidate
+
+/favicon.svg
+  Cache-Control: no-cache, must-revalidate
+
+/app-icon.svg
+  Cache-Control: no-cache, must-revalidate
+
+/site.webmanifest
+  Cache-Control: no-cache, must-revalidate
+
+/app-icon-192.png
+  Cache-Control: no-cache, must-revalidate
+
+/app-icon-512.png
+  Cache-Control: no-cache, must-revalidate
+
+/favicon.ico
+  Cache-Control: no-cache, must-revalidate
